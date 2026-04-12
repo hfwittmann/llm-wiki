@@ -5,7 +5,7 @@ import remarkMath from "remark-math"
 import rehypeKatex from "rehype-katex"
 import "katex/dist/katex.min.css"
 import {
-  Bot, User, FileText, BookmarkPlus, ChevronDown, ChevronRight, RefreshCw,
+  Bot, User, FileText, BookmarkPlus, ChevronDown, ChevronRight, RefreshCw, Copy, Check,
   Users, Lightbulb, BookOpen, HelpCircle, GitMerge, BarChart3, Layout, Globe,
 } from "lucide-react"
 import { useWikiStore } from "@/stores/wiki-store"
@@ -97,6 +97,7 @@ export function ChatMessage({ message, isLastAssistant, onRegenerate }: ChatMess
         {isAssistant && <CitedReferencesPanel content={message.content} savedReferences={message.references} />}
         {isAssistant && hovered && (
           <div className="flex items-center gap-1">
+            <CopyButton content={message.content} />
             <SaveToWikiButton content={message.content} visible={true} />
             {isLastAssistant && onRegenerate && (
               <button
@@ -112,6 +113,35 @@ export function ChatMessage({ message, isLastAssistant, onRegenerate }: ChatMess
         )}
       </div>
     </div>
+  )
+}
+
+function CopyButton({ content }: { content: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = useCallback(async () => {
+    // Strip HTML comments and thinking blocks before copying
+    const clean = content
+      .replace(/<!--.*?-->/gs, "")
+      .replace(/<think(?:ing)?>\s*[\s\S]*?<\/think(?:ing)?>\s*/gi, "")
+      .replace(/<think(?:ing)?>\s*[\s\S]*$/gi, "")
+      .trim()
+
+    await navigator.clipboard.writeText(clean)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }, [content])
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+      title="Copy to clipboard"
+    >
+      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+      {copied ? "Copied!" : "Copy"}
+    </button>
   )
 }
 
