@@ -5,10 +5,25 @@
  */
 import fs from "node:fs/promises"
 import path from "node:path"
-import type { SweepScenario } from "./types"
+
+/**
+ * Minimal shape every scenario shares: name, description, initialWiki,
+ * optional llmResponse, expected. Scenario-specific fields (reviews for
+ * sweep, pageToEnrich for enrich, etc.) are picked up opportunistically.
+ */
+type AnyScenario = {
+  name: string
+  description: string
+  initialWiki: Record<string, string>
+  llmResponse?: string
+  expected: unknown
+  // optional per-domain fields
+  reviews?: unknown
+  pageToEnrich?: string
+}
 
 export async function materializeScenario(
-  scenario: SweepScenario,
+  scenario: AnyScenario,
   rootDir: string,
 ): Promise<{ scenarioPath: string }> {
   const scenarioPath = path.join(rootDir, scenario.name)
@@ -17,7 +32,7 @@ export async function materializeScenario(
   await fs.rm(scenarioPath, { recursive: true, force: true })
   await fs.mkdir(scenarioPath, { recursive: true })
 
-  // initial-wiki/ — the project state before sweep runs
+  // initial-wiki/ — the project state before the tested operation runs
   const wikiDir = path.join(scenarioPath, "initial-wiki")
   for (const [relPath, content] of Object.entries(scenario.initialWiki)) {
     const full = path.join(wikiDir, relPath)
@@ -25,12 +40,23 @@ export async function materializeScenario(
     await fs.writeFile(full, content, "utf-8")
   }
 
-  // reviews.json — what to inject into the review store
-  await fs.writeFile(
-    path.join(scenarioPath, "reviews.json"),
-    JSON.stringify(scenario.reviews, null, 2),
-    "utf-8",
-  )
+  // reviews.json — only for sweep scenarios
+  if (scenario.reviews !== undefined) {
+    await fs.writeFile(
+      path.join(scenarioPath, "reviews.json"),
+      JSON.stringify(scenario.reviews, null, 2),
+      "utf-8",
+    )
+  }
+
+  // page-to-enrich.txt — only for enrich scenarios; stored as a pointer file
+  if (scenario.pageToEnrich !== undefined) {
+    await fs.writeFile(
+      path.join(scenarioPath, "page-to-enrich.txt"),
+      scenario.pageToEnrich,
+      "utf-8",
+    )
+  }
 
   // llm-response.txt — raw text the mocked streamChat will emit (if any)
   if (scenario.llmResponse !== undefined) {
@@ -41,7 +67,7 @@ export async function materializeScenario(
     )
   }
 
-  // expected.json — what sweep should produce
+  // expected.json — what the operation should produce
   await fs.writeFile(
     path.join(scenarioPath, "expected.json"),
     JSON.stringify(scenario.expected, null, 2),

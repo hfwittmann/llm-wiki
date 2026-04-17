@@ -38,6 +38,63 @@ export interface SweepScenarioExpected {
   resolvedActions?: Record<string, string>
 }
 
+/**
+ * Lint scenarios exercise both runStructuralLint (deterministic — orphans,
+ * broken links, no-outlinks) and optionally runSemanticLint (LLM-backed).
+ */
+export interface LintScenario {
+  name: string
+  description: string
+  /** Virtual project tree. Must include a wiki/ subfolder. */
+  initialWiki: Record<string, string>
+  /**
+   * Optional raw LLM response for semantic lint. When absent, the semantic
+   * stage is skipped — only structural assertions apply.
+   */
+  llmResponse?: string
+  expected: {
+    /** Expected structural lint findings. Order-independent. */
+    structural: Array<{
+      type: "orphan" | "broken-link" | "no-outlinks"
+      /** Page path relative to wiki/ (e.g. "attention.md") */
+      page: string
+      /** For broken-link, the substring that should appear in the detail */
+      linkName?: string
+    }>
+    /** Expected semantic lint findings (when llmResponse provided) */
+    semantic?: Array<{
+      type: string
+      severity: string
+      titleContains?: string
+    }>
+  }
+}
+
+/**
+ * Enrich-wikilinks scenarios assert the behavior of enrichWithWikilinks:
+ * given an existing page + wiki index + canned LLM response, does the
+ * function write the expected new content (or correctly refuse to write)?
+ */
+export interface EnrichScenario {
+  name: string
+  description: string
+  /** Virtual project tree. Must include wiki/index.md. */
+  initialWiki: Record<string, string>
+  /** Project-relative path of the page to enrich (e.g. "wiki/transformer.md"). */
+  pageToEnrich: string
+  /** Raw streamChat response text (including fences, prose wrappers, etc). */
+  llmResponse: string
+  expected: {
+    /** True if the page on disk should have been overwritten. */
+    writeCalled: boolean
+    /**
+     * Exact expected content of pageToEnrich after the call — only checked
+     * when writeCalled is true.
+     */
+    expectedContent?: string
+  }
+}
+
 export interface SweepScenario {
   /**
    * Path-like name used as the scenario's folder under
