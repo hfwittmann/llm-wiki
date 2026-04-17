@@ -73,9 +73,11 @@ function App() {
 
   async function handleProjectOpened(proj: WikiProject) {
     // Clear all per-project state BEFORE loading new project data
-    // to prevent cross-project contamination
+    // to prevent cross-project contamination. MUST be awaited so the
+    // ingest queue / graph cache are actually cleared before the new
+    // project's state is populated.
     const { resetProjectState } = await import("@/lib/reset-project-state")
-    resetProjectState()
+    await resetProjectState()
 
     setProject(proj)
     setSelectedFile(null)
@@ -166,7 +168,7 @@ function App() {
     // Clear all per-project state BEFORE flipping back to the welcome screen
     // so old data cannot leak in via any async render pass.
     const { resetProjectState } = await import("@/lib/reset-project-state")
-    resetProjectState()
+    await resetProjectState()
     setProject(null)
     setFileTree([])
     setSelectedFile(null)

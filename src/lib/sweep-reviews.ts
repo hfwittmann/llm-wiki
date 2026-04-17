@@ -316,13 +316,33 @@ async function llmJudgeReviews(
 // ── Main ──────────────────────────────────────────────────────────────────
 
 /**
+ * Returns true if the given path still matches the currently-open project.
+ * Used to bail mid-sweep if the user has switched projects under us —
+ * the sweep's wiki index is for the old project and would falsely match
+ * the new project's reviews if we kept going.
+ */
+function matchesCurrentProject(projectPath: string): boolean {
+  const current = useWikiStore.getState().project?.path
+  if (!current) return false
+  return normalizePath(current) === normalizePath(projectPath)
+}
+
+/**
  * Scan pending review items and auto-resolve those whose condition
  * no longer holds. Called when the ingest queue drains.
+ *
+ * Guards against two races:
+ *   - `signal` aborted mid-flight (e.g. project switch triggered clearQueueState)
+ *   - The current project changed while we were awaiting I/O — the wiki index
+ *     we built is for the wrong project and must not be applied.
  */
 export async function sweepResolvedReviews(
   projectPath: string,
   signal?: AbortSignal,
 ): Promise<number> {
+  if (signal?.aborted) return 0
+  if (!matchesCurrentProject(projectPath)) return 0
+
   const store = useReviewStore.getState()
   const pending = store.items.filter((i) => !i.resolved)
 
@@ -330,11 +350,19 @@ export async function sweepResolvedReviews(
 
   const index = await buildWikiIndex(projectPath)
 
+  // Re-check after async I/O: user may have switched projects while we
+  // were reading the wiki directory.
+  if (signal?.aborted || !matchesCurrentProject(projectPath)) return 0
+
   let ruleResolved = 0
   const stillPending: ReviewItem[] = []
 
   // Stage 1: rule-based matching
   for (const item of pending) {
+    // Bail mid-loop on project switch / abort — applying rules to new
+    // project's reviews with old project's wiki index would corrupt state.
+    if (signal?.aborted || !matchesCurrentProject(projectPath)) return ruleResolved
+
     let resolvedByRule = false
 
     if (item.type === "missing-page") {
@@ -371,7 +399,7 @@ export async function sweepResolvedReviews(
   const activity = useActivityStore.getState()
   let activityId: string | null = null
 
-  if (stillPending.length > 0 && !signal?.aborted) {
+  if (stillPending.length > 0 && !signal?.aborted && matchesCurrentProject(projectPath)) {
     // Surface a running indicator so a multi-second LLM judgment doesn't
     // feel like the app froze.
     activityId = activity.addItem({
@@ -384,7 +412,9 @@ export async function sweepResolvedReviews(
 
     try {
       const resolvedIds = await llmJudgeReviews(stillPending, index, signal)
-      if (!signal?.aborted) {
+      // Final guard: do not write results if the user switched projects
+      // or aborted between the LLM call starting and finishing.
+      if (!signal?.aborted && matchesCurrentProject(projectPath)) {
         for (const id of resolvedIds) {
           store.resolveItem(id, "llm-judged")
           llmResolved++

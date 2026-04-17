@@ -1,7 +1,11 @@
 /**
  * Centralized reset of all per-project state.
- * MUST be called both when leaving a project and when opening a new one,
- * to prevent cross-project data contamination.
+ * MUST be called (and AWAITED) both when leaving a project and when opening a
+ * new one, to prevent cross-project data contamination.
+ *
+ * Returns once every store/cache has actually been cleared — the caller can
+ * trust that downstream project-opening steps will not race with lingering
+ * cleanup.
  */
 
 import { useChatStore } from "@/stores/chat-store"
@@ -9,8 +13,8 @@ import { useReviewStore } from "@/stores/review-store"
 import { useActivityStore } from "@/stores/activity-store"
 import { useResearchStore } from "@/stores/research-store"
 
-export function resetProjectState() {
-  // Zustand stores — clear all per-project data
+export async function resetProjectState(): Promise<void> {
+  // Zustand stores — clear all per-project data (synchronous)
   useChatStore.setState({
     conversations: [],
     messages: [],
@@ -34,18 +38,30 @@ export function resetProjectState() {
     panelOpen: false,
   })
 
-  // Module-level caches
-  // Ingest queue
-  import("@/lib/ingest-queue").then(({ clearQueueState }) => {
-    clearQueueState()
-  }).catch((err) => {
-    console.warn("[Reset Project State] Failed to clear ingest queue:", err)
-  })
+  // Module-level caches — load in parallel and clear each, surfacing any
+  // failure instead of swallowing it.
+  const [queueMod, graphMod] = await Promise.allSettled([
+    import("@/lib/ingest-queue"),
+    import("@/lib/graph-relevance"),
+  ])
 
-  // Graph relevance cache
-  import("@/lib/graph-relevance").then(({ clearGraphCache }) => {
-    clearGraphCache()
-  }).catch((err) => {
-    console.warn("[Reset Project State] Failed to clear graph cache:", err)
-  })
+  if (queueMod.status === "fulfilled") {
+    try {
+      queueMod.value.clearQueueState()
+    } catch (err) {
+      console.warn("[Reset Project State] clearQueueState failed:", err)
+    }
+  } else {
+    console.warn("[Reset Project State] Failed to load ingest-queue:", queueMod.reason)
+  }
+
+  if (graphMod.status === "fulfilled") {
+    try {
+      graphMod.value.clearGraphCache()
+    } catch (err) {
+      console.warn("[Reset Project State] clearGraphCache failed:", err)
+    }
+  } else {
+    console.warn("[Reset Project State] Failed to load graph-relevance:", graphMod.reason)
+  }
 }
