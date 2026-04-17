@@ -43,3 +43,29 @@ export async function flushMicrotasks(ticks: number = 5): Promise<void> {
     await Promise.resolve()
   }
 }
+
+/**
+ * Yield to the event loop (macrotasks) so real I/O promises (fs.writeFile,
+ * network, etc.) get a chance to settle. Use after triggering an async
+ * operation backed by libuv rather than pure promise continuations.
+ */
+export async function flushIO(ticks: number = 3): Promise<void> {
+  for (let i = 0; i < ticks; i++) {
+    await new Promise<void>((resolve) => setImmediate(resolve))
+  }
+}
+
+/**
+ * Wait until `predicate()` returns true, or throw after `maxAttempts`.
+ * Yields the event loop between attempts so real I/O can land.
+ */
+export async function waitFor(
+  predicate: () => boolean | Promise<boolean>,
+  maxAttempts: number = 100,
+): Promise<void> {
+  for (let i = 0; i < maxAttempts; i++) {
+    if (await predicate()) return
+    await new Promise<void>((resolve) => setImmediate(resolve))
+  }
+  throw new Error(`waitFor: predicate never became true after ${maxAttempts} attempts`)
+}
