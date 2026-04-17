@@ -13,7 +13,7 @@ import { buildRetrievalGraph, getRelatedNodes } from "@/lib/graph-relevance"
 import { useReviewStore } from "@/stores/review-store"
 import type { FileNode } from "@/types/wiki"
 import { normalizePath, getFileName, getRelativePath } from "@/lib/path-utils"
-import { detectLanguage } from "@/lib/detect-language"
+import { getOutputLanguage, buildLanguageReminder } from "@/lib/output-language"
 
 // Store the page mapping from the last query so SourceFilesBar can show which pages were cited
 export let lastQueryPages: { title: string; path: string }[] = []
@@ -283,7 +283,7 @@ export function ChatPanel() {
           `[${i + 1}] ${p.title} (${p.path})`
         ).join("\n")
 
-        const userLanguage = detectLanguage(text)
+        const outLang = getOutputLanguage(text)
 
         systemMessages.push({
           role: "system",
@@ -307,19 +307,18 @@ export function ChatPanel() {
             "",
             "---",
             "",
-            `## ⚠️ MANDATORY OUTPUT LANGUAGE: ${userLanguage}`,
+            `## ⚠️ MANDATORY OUTPUT LANGUAGE: ${outLang}`,
             "",
-            `You MUST write your entire response in **${userLanguage}**.`,
+            `You MUST write your entire response in **${outLang}**.`,
             `The wiki content above may be in a different language, but this is IRRELEVANT to your output language.`,
-            `Ignore the language of the wiki content. Write in ${userLanguage} only.`,
-            `Even proper nouns should use standard ${userLanguage} transliteration when appropriate.`,
+            `Ignore the language of the wiki content. Write in ${outLang} only.`,
+            `Even proper nouns should use standard ${outLang} transliteration when appropriate.`,
             `DO NOT use any other language. This overrides all other instructions.`,
           ].filter(Boolean).join("\n"),
         })
 
         // Stash language reminder to inject right before the user's current message
-        // (placed after history so it's the last system instruction LLM sees)
-        const langReminder = `REMINDER: Respond in ${userLanguage}. The user's message is in ${userLanguage}; your response must also be in ${userLanguage}.`
+        const langReminder = buildLanguageReminder(text)
         ;(systemMessages as unknown as { __langReminder?: string }).__langReminder = langReminder
 
         lastQueryPages = relevantPages.map((p) => ({ title: p.title, path: p.path }))

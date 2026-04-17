@@ -4,6 +4,7 @@ import type { LlmConfig } from "@/stores/wiki-store"
 import type { FileNode } from "@/types/wiki"
 import { useActivityStore } from "@/stores/activity-store"
 import { getFileName, getRelativePath, normalizePath } from "@/lib/path-utils"
+import { buildLanguageDirective } from "@/lib/output-language"
 
 export interface LintResult {
   type: "orphan" | "broken-link" | "no-outlinks" | "semantic"
@@ -201,8 +202,7 @@ export async function runSemanticLint(
   const prompt = [
     "You are a wiki quality analyst. Review the following wiki page summaries and identify issues.",
     "",
-    "## Language Rule",
-    "- Match the language of the wiki content. If pages are in Chinese, write issues in Chinese. If in English, use English.",
+    buildLanguageDirective(""),
     "",
     "For each issue, output exactly this format:",
     "",

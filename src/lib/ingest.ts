@@ -7,10 +7,20 @@ import { useActivityStore } from "@/stores/activity-store"
 import { useReviewStore, type ReviewItem } from "@/stores/review-store"
 import { getFileName, normalizePath } from "@/lib/path-utils"
 import { checkIngestCache, saveIngestCache } from "@/lib/ingest-cache"
+import { buildLanguageDirective, getOutputLanguage } from "@/lib/output-language"
 
 const FILE_BLOCK_REGEX = /---FILE:\s*([^\n-]+?)\s*---\n([\s\S]*?)---END FILE---/g
 
-export const LANGUAGE_RULE = "## Language Rule\n- ALWAYS match the language of the source document. If the source is in Chinese, write in Chinese. If in English, write in English. Wiki page titles, content, and descriptions should all be in the same language as the source material."
+/**
+ * Build the language rule for ingest prompts.
+ * Uses the user's configured output language, falling back to source content detection.
+ */
+export function languageRule(sourceContent: string = ""): string {
+  return buildLanguageDirective(sourceContent)
+}
+
+/** @deprecated Use languageRule() instead — kept for backwards compat with enrich-wikilinks */
+export const LANGUAGE_RULE = buildLanguageDirective("")
 
 /**
  * Auto-ingest: reads source → LLM analyzes → LLM writes wiki pages, all in one go.
@@ -68,7 +78,7 @@ export async function autoIngest(
   await streamChat(
     llmConfig,
     [
-      { role: "system", content: buildAnalysisPrompt(purpose, index) },
+      { role: "system", content: buildAnalysisPrompt(purpose, index, truncatedContent) },
       { role: "user", content: `Analyze this source document:\n\n**File:** ${fileName}${folderContext ? `\n**Folder context:** ${folderContext}` : ""}\n\n---\n\n${truncatedContent}` },
     ],
     {
@@ -94,7 +104,7 @@ export async function autoIngest(
   await streamChat(
     llmConfig,
     [
-      { role: "system", content: buildGenerationPrompt(schema, purpose, index, fileName, overview) },
+      { role: "system", content: buildGenerationPrompt(schema, purpose, index, fileName, overview, truncatedContent) },
       {
         role: "user",
         content: [
@@ -312,11 +322,11 @@ function parseReviewBlocks(
  * Step 1 prompt: AI reads the source and produces a structured analysis.
  * This is the "discussion" step — the AI reasons about the source before writing wiki pages.
  */
-function buildAnalysisPrompt(purpose: string, index: string): string {
+function buildAnalysisPrompt(purpose: string, index: string, sourceContent: string = ""): string {
   return [
     "You are an expert research analyst. Read the source document and produce a structured analysis.",
     "",
-    LANGUAGE_RULE,
+    languageRule(sourceContent),
     "",
     "Your analysis should cover:",
     "",
@@ -362,14 +372,14 @@ function buildAnalysisPrompt(purpose: string, index: string): string {
 /**
  * Step 2 prompt: AI takes its own analysis and generates wiki files + review items.
  */
-function buildGenerationPrompt(schema: string, purpose: string, index: string, sourceFileName: string, overview?: string): string {
+function buildGenerationPrompt(schema: string, purpose: string, index: string, sourceFileName: string, overview?: string, sourceContent: string = ""): string {
   // Use original filename (without extension) as the source summary page name
   const sourceBaseName = sourceFileName.replace(/\.[^.]+$/, "")
 
   return [
     "You are a wiki maintainer. Based on the analysis provided, generate wiki files.",
     "",
-    LANGUAGE_RULE,
+    languageRule(sourceContent),
     "",
     `## IMPORTANT: Source File`,
     `The original source file is: **${sourceFileName}**`,
@@ -496,7 +506,7 @@ export async function startIngest(
   const systemPrompt = [
     "You are a knowledgeable assistant helping to build a wiki from source documents.",
     "",
-    LANGUAGE_RULE,
+    languageRule(sourceContent),
     "",
     purpose ? `## Wiki Purpose\n${purpose}` : "",
     schema ? `## Wiki Schema\n${schema}` : "",
@@ -594,7 +604,7 @@ export async function executeIngestWrites(
   const systemPrompt = [
     "You are a wiki generation assistant. Your task is to produce structured wiki file contents.",
     "",
-    LANGUAGE_RULE,
+    languageRule(""),
     schema ? `## Wiki Schema\n${schema}` : "",
   ]
     .filter(Boolean)
