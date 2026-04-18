@@ -19,8 +19,8 @@ import { useActivityStore } from "@/stores/activity-store"
 import { lintScenarios } from "@/test-helpers/scenarios/lint-scenarios"
 
 const LLM_PROVIDER = (process.env.LLM_PROVIDER ?? "ollama") as "ollama" | "minimax"
-const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://192.168.1.50:11434"
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen3.5:9b"
+const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://192.168.1.50:8080"
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"
 const MINIMAX_API_KEY = process.env.MINIMAX_API_KEY ?? ""
 const MINIMAX_MODEL = process.env.MINIMAX_MODEL ?? "MiniMax-M2.7-highspeed"
 const MINIMAX_ENDPOINT = process.env.MINIMAX_ENDPOINT ?? "https://api.minimaxi.com/v1"
@@ -73,7 +73,7 @@ async function setup(scenario: typeof lintScenarios[number]): Promise<Ctx> {
           model: MINIMAX_MODEL,
           ollamaUrl: "",
           customEndpoint: MINIMAX_ENDPOINT,
-          maxContextSize: 128000,
+          maxContextSize: 110000,
         }
       : {
           provider: "ollama",
@@ -81,7 +81,7 @@ async function setup(scenario: typeof lintScenarios[number]): Promise<Ctx> {
           model: OLLAMA_MODEL,
           ollamaUrl: OLLAMA_URL,
           customEndpoint: "",
-          maxContextSize: 128000,
+          maxContextSize: 110000,
         },
   )
 
