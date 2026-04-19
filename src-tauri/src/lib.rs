@@ -1,10 +1,16 @@
 mod clip_server;
 mod commands;
+mod panic_guard;
 mod types;
+
+use panic_guard::run_guarded;
 
 #[tauri::command]
 fn clip_server_status() -> String {
-    clip_server::get_daemon_status().to_string()
+    run_guarded("clip_server_status", || {
+        Ok(clip_server::get_daemon_status().to_string())
+    })
+    .unwrap_or_else(|e| format!("error: {e}"))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

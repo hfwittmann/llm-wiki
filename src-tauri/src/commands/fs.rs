@@ -4,6 +4,7 @@ use std::path::Path;
 
 use calamine::{Reader, open_workbook_auto, Data};
 
+use crate::panic_guard::run_guarded;
 use crate::types::wiki::FileNode;
 
 /// Known binary formats that need special extraction
@@ -19,65 +20,69 @@ const LEGACY_DOC_EXTS: &[&str] = &["doc", "xls", "ppt", "pages", "numbers", "key
 
 #[tauri::command]
 pub fn read_file(path: String) -> Result<String, String> {
-    let p = Path::new(&path);
-    let ext = p
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
+    run_guarded("read_file", || {
+        let p = Path::new(&path);
+        let ext = p
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
 
-    // Check cache first for any extractable format
-    if let Some(cached) = read_cache(p) {
-        return Ok(cached);
-    }
+        // Check cache first for any extractable format
+        if let Some(cached) = read_cache(p) {
+            return Ok(cached);
+        }
 
-    match ext.as_str() {
-        "pdf" => extract_pdf_text(&path),
-        e if OFFICE_EXTS.contains(&e) => extract_office_text(&path, e),
-        e if IMAGE_EXTS.contains(&e) => {
-            let size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-            Ok(format!("[Image: {} ({:.1} KB)]", p.file_name().unwrap_or_default().to_string_lossy(), size as f64 / 1024.0))
-        }
-        e if MEDIA_EXTS.contains(&e) => {
-            let size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-            Ok(format!("[Media: {} ({:.1} MB)]", p.file_name().unwrap_or_default().to_string_lossy(), size as f64 / 1048576.0))
-        }
-        e if LEGACY_DOC_EXTS.contains(&e) => {
-            Ok(format!("[Document: {} — text extraction not supported for .{} format]",
-                p.file_name().unwrap_or_default().to_string_lossy(), e))
-        }
-        _ => {
-            // Try reading as text; if it fails (binary), return a friendly message
-            match fs::read_to_string(&path) {
-                Ok(content) => Ok(content),
-                Err(_) => {
-                    let size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-                    Ok(format!("[Binary file: {} ({:.1} KB)]",
-                        p.file_name().unwrap_or_default().to_string_lossy(), size as f64 / 1024.0))
+        match ext.as_str() {
+            "pdf" => extract_pdf_text(&path),
+            e if OFFICE_EXTS.contains(&e) => extract_office_text(&path, e),
+            e if IMAGE_EXTS.contains(&e) => {
+                let size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+                Ok(format!("[Image: {} ({:.1} KB)]", p.file_name().unwrap_or_default().to_string_lossy(), size as f64 / 1024.0))
+            }
+            e if MEDIA_EXTS.contains(&e) => {
+                let size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+                Ok(format!("[Media: {} ({:.1} MB)]", p.file_name().unwrap_or_default().to_string_lossy(), size as f64 / 1048576.0))
+            }
+            e if LEGACY_DOC_EXTS.contains(&e) => {
+                Ok(format!("[Document: {} — text extraction not supported for .{} format]",
+                    p.file_name().unwrap_or_default().to_string_lossy(), e))
+            }
+            _ => {
+                // Try reading as text; if it fails (binary), return a friendly message
+                match fs::read_to_string(&path) {
+                    Ok(content) => Ok(content),
+                    Err(_) => {
+                        let size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+                        Ok(format!("[Binary file: {} ({:.1} KB)]",
+                            p.file_name().unwrap_or_default().to_string_lossy(), size as f64 / 1024.0))
+                    }
                 }
             }
         }
-    }
+    })
 }
 
 /// Pre-process a file and cache the extracted text.
 #[tauri::command]
 pub fn preprocess_file(path: String) -> Result<String, String> {
-    let p = Path::new(&path);
-    let ext = p
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
+    run_guarded("preprocess_file", || {
+        let p = Path::new(&path);
+        let ext = p
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
 
-    let text = match ext.as_str() {
-        "pdf" => extract_pdf_text(&path)?,
-        e if OFFICE_EXTS.contains(&e) => extract_office_text(&path, e)?,
-        _ => return Ok("no preprocessing needed".to_string()),
-    };
+        let text = match ext.as_str() {
+            "pdf" => extract_pdf_text(&path)?,
+            e if OFFICE_EXTS.contains(&e) => extract_office_text(&path, e)?,
+            _ => return Ok("no preprocessing needed".to_string()),
+        };
 
-    write_cache(p, &text)?;
-    Ok(text)
+        write_cache(p, &text)?;
+        Ok(text)
+    })
 }
 
 fn cache_path_for(original: &Path) -> std::path::PathBuf {
@@ -635,25 +640,30 @@ fn extract_odf_text(archive: &mut zip::ZipArchive<fs::File>) -> Result<String, S
 
 #[tauri::command]
 pub fn write_file(path: String, contents: String) -> Result<(), String> {
-    let p = Path::new(&path);
-    if let Some(parent) = p.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create parent dirs for '{}': {}", path, e))?;
-    }
-    fs::write(&path, contents).map_err(|e| format!("Failed to write file '{}': {}", path, e))
+    run_guarded("write_file", || {
+        let p = Path::new(&path);
+        if let Some(parent) = p.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create parent dirs for '{}': {}", path, e))?;
+        }
+        fs::write(&path, contents)
+            .map_err(|e| format!("Failed to write file '{}': {}", path, e))
+    })
 }
 
 #[tauri::command]
 pub fn list_directory(path: String) -> Result<Vec<FileNode>, String> {
-    let p = Path::new(&path);
-    if !p.exists() {
-        return Err(format!("Path does not exist: '{}'", path));
-    }
-    if !p.is_dir() {
-        return Err(format!("Path is not a directory: '{}'", path));
-    }
-    let nodes = build_tree(p, 0, 30)?;
-    Ok(nodes)
+    run_guarded("list_directory", || {
+        let p = Path::new(&path);
+        if !p.exists() {
+            return Err(format!("Path does not exist: '{}'", path));
+        }
+        if !p.is_dir() {
+            return Err(format!("Path is not a directory: '{}'", path));
+        }
+        let nodes = build_tree(p, 0, 30)?;
+        Ok(nodes)
+    })
 }
 
 fn build_tree(dir: &Path, depth: usize, max_depth: usize) -> Result<Vec<FileNode>, String> {
@@ -720,91 +730,99 @@ fn build_tree(dir: &Path, depth: usize, max_depth: usize) -> Result<Vec<FileNode
 
 #[tauri::command]
 pub fn copy_file(source: String, destination: String) -> Result<(), String> {
-    let dest = Path::new(&destination);
-    if let Some(parent) = dest.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create parent dirs: {}", e))?;
-    }
-    fs::copy(&source, &destination)
-        .map_err(|e| format!("Failed to copy '{}' to '{}': {}", source, destination, e))?;
-    Ok(())
+    run_guarded("copy_file", || {
+        let dest = Path::new(&destination);
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create parent dirs: {}", e))?;
+        }
+        fs::copy(&source, &destination)
+            .map_err(|e| format!("Failed to copy '{}' to '{}': {}", source, destination, e))?;
+        Ok(())
+    })
 }
 
 /// Recursively copy a directory, preserving structure.
 /// Returns list of copied file paths (destination paths).
 #[tauri::command]
 pub fn copy_directory(source: String, destination: String) -> Result<Vec<String>, String> {
-    let src = Path::new(&source);
-    let dest = Path::new(&destination);
+    run_guarded("copy_directory", || {
+        let src = Path::new(&source);
+        let dest = Path::new(&destination);
 
-    if !src.is_dir() {
-        return Err(format!("'{}' is not a directory", source));
-    }
-
-    let mut copied_files = Vec::new();
-
-    fn copy_recursive(
-        src: &Path,
-        dest: &Path,
-        files: &mut Vec<String>,
-    ) -> Result<(), String> {
-        fs::create_dir_all(dest)
-            .map_err(|e| format!("Failed to create dir '{}': {}", dest.display(), e))?;
-
-        let entries = fs::read_dir(src)
-            .map_err(|e| format!("Failed to read dir '{}': {}", src.display(), e))?;
-
-        for entry in entries {
-            let entry = entry.map_err(|e| format!("Dir entry error: {}", e))?;
-            let path = entry.path();
-            let name = entry.file_name();
-            let dest_path = dest.join(&name);
-
-            // Skip hidden files/dirs
-            if name.to_string_lossy().starts_with('.') {
-                continue;
-            }
-
-            if path.is_dir() {
-                copy_recursive(&path, &dest_path, files)?;
-            } else {
-                fs::copy(&path, &dest_path).map_err(|e| {
-                    format!("Failed to copy '{}': {}", path.display(), e)
-                })?;
-                files.push(dest_path.to_string_lossy().to_string());
-            }
+        if !src.is_dir() {
+            return Err(format!("'{}' is not a directory", source));
         }
-        Ok(())
-    }
 
-    copy_recursive(src, dest, &mut copied_files)?;
-    Ok(copied_files)
+        let mut copied_files = Vec::new();
+
+        fn copy_recursive(
+            src: &Path,
+            dest: &Path,
+            files: &mut Vec<String>,
+        ) -> Result<(), String> {
+            fs::create_dir_all(dest)
+                .map_err(|e| format!("Failed to create dir '{}': {}", dest.display(), e))?;
+
+            let entries = fs::read_dir(src)
+                .map_err(|e| format!("Failed to read dir '{}': {}", src.display(), e))?;
+
+            for entry in entries {
+                let entry = entry.map_err(|e| format!("Dir entry error: {}", e))?;
+                let path = entry.path();
+                let name = entry.file_name();
+                let dest_path = dest.join(&name);
+
+                // Skip hidden files/dirs
+                if name.to_string_lossy().starts_with('.') {
+                    continue;
+                }
+
+                if path.is_dir() {
+                    copy_recursive(&path, &dest_path, files)?;
+                } else {
+                    fs::copy(&path, &dest_path).map_err(|e| {
+                        format!("Failed to copy '{}': {}", path.display(), e)
+                    })?;
+                    files.push(dest_path.to_string_lossy().to_string());
+                }
+            }
+            Ok(())
+        }
+
+        copy_recursive(src, dest, &mut copied_files)?;
+        Ok(copied_files)
+    })
 }
 
 #[tauri::command]
 pub fn delete_file(path: String) -> Result<(), String> {
-    let p = Path::new(&path);
-    if p.is_dir() {
-        fs::remove_dir_all(&path)
-            .map_err(|e| format!("Failed to delete directory '{}': {}", path, e))
-    } else {
-        fs::remove_file(&path)
-            .map_err(|e| format!("Failed to delete file '{}': {}", path, e))
-    }
+    run_guarded("delete_file", || {
+        let p = Path::new(&path);
+        if p.is_dir() {
+            fs::remove_dir_all(&path)
+                .map_err(|e| format!("Failed to delete directory '{}': {}", path, e))
+        } else {
+            fs::remove_file(&path)
+                .map_err(|e| format!("Failed to delete file '{}': {}", path, e))
+        }
+    })
 }
 
 /// Find wiki pages that reference a given source file name.
 /// Scans all .md files under wiki/ for the source filename in frontmatter or content.
 #[tauri::command]
 pub fn find_related_wiki_pages(project_path: String, source_name: String) -> Result<Vec<String>, String> {
-    let wiki_dir = Path::new(&project_path).join("wiki");
-    if !wiki_dir.is_dir() {
-        return Ok(vec![]);
-    }
+    run_guarded("find_related_wiki_pages", || {
+        let wiki_dir = Path::new(&project_path).join("wiki");
+        if !wiki_dir.is_dir() {
+            return Ok(vec![]);
+        }
 
-    let mut related = Vec::new();
-    collect_related_pages(&wiki_dir, &source_name, &mut related)?;
-    Ok(related)
+        let mut related = Vec::new();
+        collect_related_pages(&wiki_dir, &source_name, &mut related)?;
+        Ok(related)
+    })
 }
 
 fn collect_related_pages(dir: &Path, source_name: &str, results: &mut Vec<String>) -> Result<(), String> {
@@ -880,6 +898,8 @@ fn collect_related_pages(dir: &Path, source_name: &str, results: &mut Vec<String
 
 #[tauri::command]
 pub fn create_directory(path: String) -> Result<(), String> {
-    fs::create_dir_all(&path)
-        .map_err(|e| format!("Failed to create directory '{}': {}", path, e))
+    run_guarded("create_directory", || {
+        fs::create_dir_all(&path)
+            .map_err(|e| format!("Failed to create directory '{}': {}", path, e))
+    })
 }

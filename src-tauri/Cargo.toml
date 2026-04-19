@@ -41,5 +41,8 @@ futures = "0.3"
 codegen-units = 1
 lto = true
 opt-level = "s"
-panic = "abort"
+# Unwind (not abort) so third-party parser panics can be caught at the
+# Tauri command boundary via panic_guard and turned into errors. Slightly
+# larger binary, but prevents single-file corruption from killing the app.
+panic = "unwind"
 strip = true
