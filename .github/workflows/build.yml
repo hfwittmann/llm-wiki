@@ -18,12 +18,15 @@ jobs:
           - platform: macos-latest
             args: '--target aarch64-apple-darwin'
             rust_target: aarch64-apple-darwin
+            pdfium_platform: mac-arm64
           - platform: ubuntu-22.04
             args: ''
             rust_target: ''
+            pdfium_platform: linux-x64
           - platform: windows-latest
             args: ''
             rust_target: ''
+            pdfium_platform: win-x64
 
     runs-on: ${{ matrix.platform }}
 
@@ -57,6 +60,10 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm install
+
+      - name: Fetch PDFium dynamic library (${{ matrix.pdfium_platform }})
+        shell: bash
+        run: ./scripts/fetch-pdfium.sh ${{ matrix.pdfium_platform }}
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0

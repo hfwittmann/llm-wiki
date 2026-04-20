@@ -21,6 +21,15 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
+        .setup(|app| {
+            // Let the PDF extractor find the bundled pdfium dynamic
+            // library via Tauri's platform-correct resource path.
+            use tauri::Manager;
+            if let Ok(dir) = app.path().resource_dir() {
+                commands::fs::set_resource_dir_hint(dir);
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::fs::read_file,
             commands::fs::write_file,

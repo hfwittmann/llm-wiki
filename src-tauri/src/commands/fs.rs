@@ -120,25 +120,129 @@ fn write_cache(original: &Path, text: &str) -> Result<(), String> {
 static PDFIUM: std::sync::OnceLock<Result<pdfium_render::prelude::Pdfium, String>> =
     std::sync::OnceLock::new();
 
+/// Additional resource directory hint, set by the Tauri setup() callback
+/// once the AppHandle is available. Lets the pdfium resolver find the
+/// bundled dylib without re-implementing Tauri's platform-specific
+/// resource-dir logic.
+static RESOURCE_DIR_HINT: std::sync::OnceLock<std::path::PathBuf> =
+    std::sync::OnceLock::new();
+
+/// Called from Tauri's setup() with the resolved resource directory.
+/// No-op if already set.
+pub fn set_resource_dir_hint(dir: std::path::PathBuf) {
+    let _ = RESOURCE_DIR_HINT.set(dir);
+}
+
+/// Enumerate plausible locations for the PDFium dynamic library on the
+/// current platform. Order from most specific to least:
+///   1. `$PDFIUM_DYNAMIC_LIB_PATH` env var (local dev convenience)
+///   2. Tauri resource dir (set via setup()) — the authoritative location
+///   3. Paths relative to the executable where Tauri's bundler lands
+///      resources on each platform (macOS Frameworks / Resources /
+///      MacOS dir, Windows sibling, Linux sibling)
+///   4. OS dynamic loader search path (last resort)
+fn pdfium_candidate_paths() -> Vec<String> {
+    let mut v: Vec<String> = Vec::new();
+
+    if let Ok(p) = std::env::var("PDFIUM_DYNAMIC_LIB_PATH") {
+        v.push(p);
+    }
+
+    // Tauri-resolved resource directory (set during setup()).
+    if let Some(resource_dir) = RESOURCE_DIR_HINT.get() {
+        #[cfg(target_os = "macos")]
+        v.push(
+            resource_dir
+                .join("libpdfium.dylib")
+                .to_string_lossy()
+                .into_owned(),
+        );
+        #[cfg(target_os = "windows")]
+        {
+            v.push(
+                resource_dir
+                    .join("pdfium.dll")
+                    .to_string_lossy()
+                    .into_owned(),
+            );
+            v.push(
+                resource_dir
+                    .join("libpdfium.dll")
+                    .to_string_lossy()
+                    .into_owned(),
+            );
+        }
+        #[cfg(target_os = "linux")]
+        v.push(
+            resource_dir
+                .join("libpdfium.so")
+                .to_string_lossy()
+                .into_owned(),
+        );
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            let push = |v: &mut Vec<String>, p: std::path::PathBuf| {
+                v.push(p.to_string_lossy().into_owned());
+            };
+
+            #[cfg(target_os = "macos")]
+            {
+                // Tauri .app bundle layout:
+                //   Contents/MacOS/<binary>
+                //   Contents/Frameworks/libpdfium.dylib   ← preferred
+                //   Contents/Resources/libpdfium.dylib    ← fallback
+                push(&mut v, exe_dir.join("../Frameworks/libpdfium.dylib"));
+                push(&mut v, exe_dir.join("../Resources/libpdfium.dylib"));
+                push(&mut v, exe_dir.join("libpdfium.dylib"));
+            }
+
+            #[cfg(target_os = "windows")]
+            {
+                // bblanchon/pdfium-binaries ships the Windows DLL as
+                // `pdfium.dll` (no `lib` prefix). Try both.
+                push(&mut v, exe_dir.join("pdfium.dll"));
+                push(&mut v, exe_dir.join("libpdfium.dll"));
+                push(&mut v, exe_dir.join("resources").join("pdfium.dll"));
+            }
+
+            #[cfg(target_os = "linux")]
+            {
+                push(&mut v, exe_dir.join("libpdfium.so"));
+                push(&mut v, exe_dir.join("resources").join("libpdfium.so"));
+                push(&mut v, exe_dir.join("../lib/libpdfium.so"));
+            }
+        }
+    }
+
+    v
+}
+
 fn pdfium() -> Result<&'static pdfium_render::prelude::Pdfium, String> {
     PDFIUM
         .get_or_init(|| {
             use pdfium_render::prelude::*;
-            // Resolution order:
-            //   1. PDFIUM_DYNAMIC_LIB_PATH env var (absolute path to dylib)
-            //   2. ./libpdfium.<ext> next to the binary
-            //   3. The OS dynamic loader's default search path
-            let bindings = if let Ok(path) = std::env::var("PDFIUM_DYNAMIC_LIB_PATH") {
-                Pdfium::bind_to_library(path)
-            } else {
-                Pdfium::bind_to_library(
-                    Pdfium::pdfium_platform_library_name_at_path("./"),
-                )
-                .or_else(|_| Pdfium::bind_to_system_library())
-            };
-            bindings
+            let candidates = pdfium_candidate_paths();
+            for path in &candidates {
+                if let Ok(bindings) = Pdfium::bind_to_library(path) {
+                    eprintln!("[pdfium] loaded dynamic library from {path}");
+                    return Ok(Pdfium::new(bindings));
+                }
+            }
+            // Last resort: let the OS dynamic loader find it.
+            Pdfium::bind_to_system_library()
                 .map(Pdfium::new)
-                .map_err(|e| format!("Failed to bind to Pdfium library: {e}"))
+                .map_err(|e| {
+                    format!(
+                        "Failed to locate Pdfium library. Tried: {} — and the system search path. Last error: {e}",
+                        if candidates.is_empty() {
+                            "(no candidates)".to_string()
+                        } else {
+                            candidates.join(", ")
+                        }
+                    )
+                })
         })
         .as_ref()
         .map_err(|e| e.clone())

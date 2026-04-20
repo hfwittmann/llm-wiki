@@ -11,6 +11,12 @@ src-tauri/target/
 # Tauri generated files
 src-tauri/gen/
 
+# Bundled PDFium binaries — downloaded per-platform by scripts/fetch-pdfium.sh
+# (invoked by CI). Too large to track in git.
+src-tauri/pdfium/*.dylib
+src-tauri/pdfium/*.dll
+src-tauri/pdfium/*.so
+
 # Environment files
 .env
 .env.local
