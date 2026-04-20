@@ -115,11 +115,60 @@ fn write_cache(original: &Path, text: &str) -> Result<(), String> {
         .map_err(|e| format!("Failed to write cache: {}", e))
 }
 
+/// Global PDFium instance — the library prefers a single binding shared
+/// across threads over repeatedly binding/unbinding.
+static PDFIUM: std::sync::OnceLock<Result<pdfium_render::prelude::Pdfium, String>> =
+    std::sync::OnceLock::new();
+
+fn pdfium() -> Result<&'static pdfium_render::prelude::Pdfium, String> {
+    PDFIUM
+        .get_or_init(|| {
+            use pdfium_render::prelude::*;
+            // Resolution order:
+            //   1. PDFIUM_DYNAMIC_LIB_PATH env var (absolute path to dylib)
+            //   2. ./libpdfium.<ext> next to the binary
+            //   3. The OS dynamic loader's default search path
+            let bindings = if let Ok(path) = std::env::var("PDFIUM_DYNAMIC_LIB_PATH") {
+                Pdfium::bind_to_library(path)
+            } else {
+                Pdfium::bind_to_library(
+                    Pdfium::pdfium_platform_library_name_at_path("./"),
+                )
+                .or_else(|_| Pdfium::bind_to_system_library())
+            };
+            bindings
+                .map(Pdfium::new)
+                .map_err(|e| format!("Failed to bind to Pdfium library: {e}"))
+        })
+        .as_ref()
+        .map_err(|e| e.clone())
+}
+
 fn extract_pdf_text(path: &str) -> Result<String, String> {
-    let bytes =
-        fs::read(path).map_err(|e| format!("Failed to read PDF '{}': {}", path, e))?;
-    pdf_extract::extract_text_from_mem(&bytes)
-        .map_err(|e| format!("Failed to extract text from PDF '{}': {}", path, e))
+    use pdfium_render::prelude::*;
+    let pdfium = pdfium()?;
+
+    let doc = pdfium
+        .load_pdf_from_file(path, None)
+        .map_err(|e| match e {
+            PdfiumError::PdfiumLibraryInternalError(
+                PdfiumInternalError::PasswordError,
+            ) => format!(
+                "PDF is password-protected and cannot be read: '{}'",
+                path
+            ),
+            _ => format!("Failed to open PDF '{}': {}", path, e),
+        })?;
+
+    let mut out = String::new();
+    for (idx, page) in doc.pages().iter().enumerate() {
+        let page_text = page
+            .text()
+            .map_err(|e| format!("Page {} text extraction failed in '{}': {}", idx + 1, path, e))?;
+        out.push_str(&page_text.all());
+        out.push('\n');
+    }
+    Ok(out)
 }
 
 /// Extract text from Office Open XML formats, converting to Markdown.
@@ -974,5 +1023,82 @@ mod tests {
         // not a runtime abort.
         let result = read_file("/nonexistent/path/that/does/not/exist.pdf".to_string());
         assert!(result.is_err() || result.is_ok()); // must at least return
+    }
+
+    /// Ad-hoc probe: run the production PDF extraction path against every
+    /// .pdf under a user-provided directory and print a per-file report of
+    /// Ok / Err (library returned an error) / Panic (library panicked and
+    /// was caught by panic_guard). Gated with #[ignore] so it never runs
+    /// in CI; execute locally with:
+    ///
+    ///   PDF_PROBE_DIR=/path/to/pdfs cargo test --lib \
+    ///     -- --ignored --nocapture pdf_probe
+    #[test]
+    #[ignore = "local probe; set PDF_PROBE_DIR"]
+    fn pdf_probe() {
+        let dir = std::env::var("PDF_PROBE_DIR")
+            .unwrap_or_else(|_| "/Users/nash_su/Downloads/pdftests".to_string());
+        let root = std::path::Path::new(&dir);
+        if !root.exists() {
+            eprintln!("[pdf_probe] dir not found: {}", root.display());
+            return;
+        }
+
+        let mut pdfs: Vec<std::path::PathBuf> = Vec::new();
+        fn walk(d: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+            if let Ok(entries) = fs::read_dir(d) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.is_dir() {
+                        walk(&p, out);
+                    } else if p.extension()
+                        .and_then(|e| e.to_str())
+                        .map(|e| e.eq_ignore_ascii_case("pdf"))
+                        .unwrap_or(false)
+                    {
+                        out.push(p);
+                    }
+                }
+            }
+        }
+        walk(root, &mut pdfs);
+        pdfs.sort();
+
+        eprintln!("\n[pdf_probe] found {} PDFs under {}\n", pdfs.len(), root.display());
+
+        let mut ok = 0usize;
+        let mut err = 0usize;
+        let mut panicked = 0usize;
+
+        for (idx, path) in pdfs.iter().enumerate() {
+            let display = path.display().to_string();
+            // Call extract_pdf_text directly (not read_file) so we bypass
+            // the .cache sibling dir and always exercise the parser.
+            let path_str = path.to_string_lossy().to_string();
+            let result = std::panic::catch_unwind(|| extract_pdf_text(&path_str));
+            match result {
+                Ok(Ok(text)) => {
+                    ok += 1;
+                    eprintln!("[{:>3}/{}] OK     ({:>7} chars)  {}", idx + 1, pdfs.len(), text.len(), display);
+                }
+                Ok(Err(e)) => {
+                    err += 1;
+                    eprintln!("[{:>3}/{}] ERR    {}  →  {}", idx + 1, pdfs.len(), display, e);
+                }
+                Err(payload) => {
+                    panicked += 1;
+                    let msg = if let Some(s) = payload.downcast_ref::<String>() {
+                        s.clone()
+                    } else if let Some(s) = payload.downcast_ref::<&str>() {
+                        (*s).to_string()
+                    } else {
+                        "(non-string panic)".to_string()
+                    };
+                    eprintln!("[{:>3}/{}] PANIC  {}  →  {}", idx + 1, pdfs.len(), display, msg);
+                }
+            }
+        }
+
+        eprintln!("\n[pdf_probe] summary: {} OK / {} ERR / {} PANIC (total {})", ok, err, panicked, pdfs.len());
     }
 }
