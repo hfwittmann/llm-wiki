@@ -70,15 +70,32 @@ echo "[fetch-pdfium] extracting"
 # bin/pdfium.dll on Windows.
 case "$PLATFORM" in
   mac-arm64|mac-x64)
-    cp "$WORKDIR/lib/libpdfium.dylib" "$DEST/libpdfium.dylib"
+    SRC="$WORKDIR/lib/libpdfium.dylib"
+    EXPECTED="$DEST/libpdfium.dylib"
     ;;
   linux-x64|linux-arm64)
-    cp "$WORKDIR/lib/libpdfium.so" "$DEST/libpdfium.so"
+    SRC="$WORKDIR/lib/libpdfium.so"
+    EXPECTED="$DEST/libpdfium.so"
     ;;
-  win-x64)
-    cp "$WORKDIR/bin/pdfium.dll" "$DEST/pdfium.dll"
+  win-x64|win-arm64)
+    SRC="$WORKDIR/bin/pdfium.dll"
+    EXPECTED="$DEST/pdfium.dll"
     ;;
 esac
+
+if [[ ! -f "$SRC" ]]; then
+  echo "[fetch-pdfium] ERROR: expected source $SRC missing after extract" >&2
+  echo "[fetch-pdfium] WORKDIR contents:" >&2
+  find "$WORKDIR" -type f >&2
+  exit 1
+fi
+
+cp "$SRC" "$EXPECTED"
+
+if [[ ! -f "$EXPECTED" ]]; then
+  echo "[fetch-pdfium] ERROR: copy failed — $EXPECTED does not exist" >&2
+  exit 1
+fi
 
 echo "[fetch-pdfium] installed to $DEST:"
 ls -lh "$DEST"
