@@ -7,13 +7,12 @@ import { useChatStore, chatMessagesToLLM } from "@/stores/chat-store"
 import { useWikiStore } from "@/stores/wiki-store"
 import { streamChat, type ChatMessage as LLMMessage } from "@/lib/llm-client"
 import { executeIngestWrites } from "@/lib/ingest"
-import { listDirectory, readFile, writeFile, deleteFile } from "@/commands/fs"
+import { listDirectory, readFile, deleteFile } from "@/commands/fs"
 import { searchWiki } from "@/lib/search"
 import { buildRetrievalGraph, getRelatedNodes } from "@/lib/graph-relevance"
-import { useReviewStore } from "@/stores/review-store"
-import type { FileNode } from "@/types/wiki"
 import { normalizePath, getFileName, getRelativePath } from "@/lib/path-utils"
 import { getOutputLanguage, buildLanguageReminder } from "@/lib/output-language"
+import { isGreeting } from "@/lib/greeting-detector"
 
 // Store the page mapping from the last query so SourceFilesBar can show which pages were cited
 export let lastQueryPages: { title: string; path: string }[] = []
@@ -169,7 +168,25 @@ export function ChatPanel() {
       const systemMessages: LLMMessage[] = []
       let queryRefs: { title: string; path: string }[] = []
       let langReminder: string | undefined
-      if (project) {
+      // Pure greetings ("hi", "你好", "嗨") don't warrant running the whole
+      // retrieval pipeline — it's slow, costs context, and drags in random
+      // wiki pages the user clearly didn't ask about. Short-circuit with a
+      // minimal system prompt and let the model reply conversationally.
+      const greetingOnly = isGreeting(text)
+      if (project && greetingOnly) {
+        const outLang = getOutputLanguage(text)
+        systemMessages.push({
+          role: "system",
+          content: [
+            `You are a wiki assistant for the project "${project.name}".`,
+            "The user sent a casual greeting — reply briefly and naturally, in one or two sentences.",
+            "Do NOT invent wiki content or pretend to have retrieved pages. Invite the user to ask a concrete question if they want information from the wiki.",
+            "",
+            `Respond in ${outLang}.`,
+          ].join("\n"),
+        })
+        // Skip retrieval; queryRefs stays empty so no "Sources" chip is shown.
+      } else if (project) {
         const pp = normalizePath(project.path)
         const dataVersion = useWikiStore.getState().dataVersion
         const maxCtx = llmConfig.maxContextSize || 204800
@@ -332,16 +349,26 @@ export function ChatPanel() {
         .filter((m) => m.role === "user" || m.role === "assistant")
         .slice(-maxHistoryMessages)
 
-      // Inject language reminder as system message between history and final user query
+      // Prepend the language reminder onto the final user turn rather than
+      // inserting a second {role:"system"} between history and the final
+      // user message. vLLM / llama.cpp / Ollama drive their chat templates
+      // from HF Jinja, and Qwen3-family templates enforce "system only at
+      // index 0" — a mid-conversation system message gets rejected with
+      // "System message must be at the beginning." (HTTP 400). OpenAI and
+      // Anthropic are more lenient, but keeping a single system at the top
+      // is the safest shape across every OpenAI-compatible backend.
       const historyMessages = chatMessagesToLLM(activeConvMessages)
-      const llmMessages = langReminder && historyMessages.length > 0
-        ? [
-            ...systemMessages,
-            ...historyMessages.slice(0, -1),
-            { role: "system" as const, content: langReminder },
-            ...historyMessages.slice(-1),
+      let llmMessages: LLMMessage[] = [...systemMessages, ...historyMessages]
+      if (langReminder && historyMessages.length > 0) {
+        const lastIdx = llmMessages.length - 1
+        const last = llmMessages[lastIdx]
+        if (last && last.role === "user") {
+          llmMessages = [
+            ...llmMessages.slice(0, lastIdx),
+            { role: "user", content: `[${langReminder}]\n\n${last.content}` },
           ]
-        : [...systemMessages, ...historyMessages]
+        }
+      }
 
       const controller = new AbortController()
       abortRef.current = controller
@@ -490,68 +517,3 @@ export function ChatPanel() {
   )
 }
 
-/**
- * Check if the LLM marked its response as save-worthy.
- * If so, add a review item prompting the user to save it.
- */
-function checkSaveWorthy(response: string, question: string) {
-  const match = response.match(/<!--\s*save-worthy:\s*yes\s*\|\s*(.+?)\s*-->/)
-  if (!match) return
-
-  const reason = match[1]
-  const firstLine = response.split("\n").find((l) => l.trim() && !l.startsWith("<!--"))?.replace(/^#+\s*/, "").trim() ?? "Chat answer"
-  const title = firstLine.slice(0, 60)
-
-  const contentToSave = response
-  const questionText = question
-
-  useReviewStore.getState().addItem({
-    type: "suggestion",
-    title: `Save to Wiki: ${title}`,
-    description: `${reason}\n\nQuestion: "${questionText.slice(0, 100)}${questionText.length > 100 ? "..." : ""}"`,
-    options: [
-      { label: "Save to Wiki", action: `save:${encodeContent(contentToSave)}` },
-      { label: "Skip", action: "Skip" },
-    ],
-  })
-}
-
-function encodeContent(text: string): string {
-  return btoa(encodeURIComponent(text))
-}
-
-function flattenFileNames(nodes: FileNode[]): string[] {
-  const names: string[] = []
-  for (const node of nodes) {
-    if (node.is_dir && node.children) {
-      names.push(...flattenFileNames(node.children))
-    } else if (!node.is_dir) {
-      names.push(node.name)
-    }
-  }
-  return names
-}
-
-function flattenMdFiles(nodes: FileNode[]): FileNode[] {
-  const files: FileNode[] = []
-  for (const node of nodes) {
-    if (node.is_dir && node.children) {
-      files.push(...flattenMdFiles(node.children))
-    } else if (!node.is_dir && node.name.endsWith(".md")) {
-      files.push(node)
-    }
-  }
-  return files
-}
-
-function flattenAllFiles(nodes: FileNode[]): FileNode[] {
-  const files: FileNode[] = []
-  for (const node of nodes) {
-    if (node.is_dir && node.children) {
-      files.push(...flattenAllFiles(node.children))
-    } else if (!node.is_dir) {
-      files.push(node)
-    }
-  }
-  return files
-}

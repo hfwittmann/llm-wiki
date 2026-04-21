@@ -205,10 +205,6 @@ export function SourcesView() {
     try {
       // Step 1: Find related wiki pages before deleting
       const relatedPages = await findRelatedWikiPages(pp, fileName)
-      const deletedSlugs = relatedPages.map((p) => {
-        const name = getFileName(p).replace(".md", "")
-        return name
-      }).filter(Boolean)
 
       // Step 2: Delete the source file
       await deleteFile(node.path)

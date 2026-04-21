@@ -7,8 +7,6 @@ import { useResearchStore } from "@/stores/research-store"
 import { normalizePath } from "@/lib/path-utils"
 import { buildLanguageDirective } from "@/lib/output-language"
 
-let processing = false
-
 /**
  * Queue a deep research task. Automatically starts processing if under concurrency limit.
  */

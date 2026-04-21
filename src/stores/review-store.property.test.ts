@@ -42,9 +42,9 @@ describe("review-store addItems — dedupe invariants", () => {
             type: b.type,
             title: b.title,
             description: b.description,
-            options: b.options,
-            affectedPages: b.affectedPages ?? undefined,
-            searchQueries: b.searchQueries ?? undefined,
+            options: [...b.options],
+            affectedPages: b.affectedPages ? [...b.affectedPages] : undefined,
+            searchQueries: b.searchQueries ? [...b.searchQueries] : undefined,
           }))
           useReviewStore.getState().addItems(input)
         }

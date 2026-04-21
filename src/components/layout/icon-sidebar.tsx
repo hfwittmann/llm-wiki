@@ -52,7 +52,7 @@ export function IconSidebar({ onSwitchProject }: IconSidebarProps) {
   }, [])
 
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <div className="flex h-full w-12 flex-col items-center border-r bg-muted/50 py-2">
         {/* Logo */}
         <div className="mb-2 flex items-center justify-center">

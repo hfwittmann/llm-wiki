@@ -51,15 +51,20 @@ export function ActivityPanel() {
   const queueSummary = getQueueSummary()
   const hasQueue = queueSummary.total > 0
 
-  // All hooks must be before any conditional return
+  // All hooks must be before any conditional return.
+  // retryTask / cancelTask / cancelAllTasks all operate on the currently
+  // active project implicitly (via module-scoped state in ingest-queue.ts)
+  // — they take NO projectPath argument. An earlier version passed one in
+  // and the extra arg silently became "taskId", making retry a no-op for
+  // every failed task. Keep this minimal.
   const handleRetry = useCallback((taskId: string) => {
     if (!project) return
-    retryTask(normalizePath(project.path), taskId)
+    retryTask(taskId)
   }, [project])
 
   const handleCancel = useCallback((taskId: string) => {
     if (!project) return
-    cancelTask(normalizePath(project.path), taskId)
+    cancelTask(taskId)
   }, [project])
 
   const handleCancelAll = useCallback(() => {
@@ -71,7 +76,7 @@ export function ActivityPanel() {
       `Partial files from the in-progress task will be removed. ` +
       `Failed tasks will be kept so you can retry them.`,
     )) return
-    cancelAllTasks(normalizePath(project.path))
+    cancelAllTasks()
   }, [project, queueSummary.pending, queueSummary.processing])
 
   // Auto-expand when a new task starts running

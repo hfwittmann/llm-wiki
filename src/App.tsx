@@ -5,7 +5,7 @@ import { useWikiStore } from "@/stores/wiki-store"
 import { useReviewStore } from "@/stores/review-store"
 import { useChatStore } from "@/stores/chat-store"
 import { listDirectory, openProject } from "@/commands/fs"
-import { getLastProject, getRecentProjects, saveLastProject, loadLlmConfig, loadLanguage, loadSearchApiConfig, loadEmbeddingConfig, loadOutputLanguage } from "@/lib/project-store"
+import { getLastProject, getRecentProjects, saveLastProject, loadLlmConfig, loadLanguage, loadSearchApiConfig, loadEmbeddingConfig, loadOutputLanguage, loadProviderConfigs, loadActivePresetId } from "@/lib/project-store"
 import { loadReviewItems, loadChatHistory } from "@/lib/persist"
 import { setupAutoSave } from "@/lib/auto-save"
 import { startClipWatcher } from "@/lib/clip-watcher"
@@ -36,6 +36,32 @@ function App() {
         const savedConfig = await loadLlmConfig()
         if (savedConfig) {
           useWikiStore.getState().setLlmConfig(savedConfig)
+        }
+        const savedProviderConfigs = await loadProviderConfigs()
+        if (savedProviderConfigs) {
+          useWikiStore.getState().setProviderConfigs(savedProviderConfigs)
+        }
+        const savedActivePreset = await loadActivePresetId()
+        if (savedActivePreset) {
+          useWikiStore.getState().setActivePresetId(savedActivePreset)
+          // Re-resolve the active preset's LlmConfig from (preset defaults
+          // + saved overrides). Without this, preset default updates
+          // (e.g. a corrected Anthropic model ID shipped in a release)
+          // never reach users who are relying on defaults — their stored
+          // `llmConfig` snapshot from a previous launch would keep the
+          // old value. Overrides still win, so an explicit user choice
+          // is preserved.
+          const { LLM_PRESETS } = await import("@/components/settings/llm-presets")
+          const { resolveConfig } = await import("@/components/settings/preset-resolver")
+          const preset = LLM_PRESETS.find((p) => p.id === savedActivePreset)
+          if (preset) {
+            const currentFallback = useWikiStore.getState().llmConfig
+            const override = (savedProviderConfigs ?? {})[savedActivePreset]
+            const resolved = resolveConfig(preset, override, currentFallback)
+            useWikiStore.getState().setLlmConfig(resolved)
+            const { saveLlmConfig } = await import("@/lib/project-store")
+            await saveLlmConfig(resolved)
+          }
         }
         const savedSearchConfig = await loadSearchApiConfig()
         if (savedSearchConfig) {

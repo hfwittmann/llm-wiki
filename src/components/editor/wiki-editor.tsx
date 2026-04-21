@@ -9,7 +9,6 @@ import { nord } from "@milkdown/theme-nord"
 import { Milkdown, MilkdownProvider, useEditor } from "@milkdown/react"
 import "@milkdown/theme-nord/style.css"
 import "katex/dist/katex.min.css"
-import { convertLatexToUnicode } from "@/lib/latex-to-unicode"
 
 interface WikiEditorInnerProps {
   content: string

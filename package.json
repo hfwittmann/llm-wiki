@@ -1,11 +1,12 @@
 {
   "name": "llm-wiki",
   "private": true,
-  "version": "0.3.6",
+  "version": "0.3.7",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "typecheck": "tsc --build --pretty",
+    "build": "npm run typecheck && vite build",
     "preview": "vite preview",
     "test": "vitest run --exclude='**/*.real-llm.test.ts'",
     "test:llm": "RUN_LLM_TESTS=1 vitest run real-llm --no-file-parallelism --reporter=verbose",

@@ -15,7 +15,6 @@ import type { DisplayMessage } from "@/stores/chat-store"
 import type { FileNode } from "@/types/wiki"
 
 import { convertLatexToUnicode } from "@/lib/latex-to-unicode"
-import { enrichWithWikilinks } from "@/lib/enrich-wikilinks"
 import { normalizePath, getFileName } from "@/lib/path-utils"
 
 // Module-level cache of source file names
@@ -648,64 +647,6 @@ function processContent(text: string): string {
   )
 
   return result
-}
-
-function SourceRef({ fileName }: { fileName: string }) {
-  const project = useWikiStore((s) => s.project)
-  const setSelectedFile = useWikiStore((s) => s.setSelectedFile)
-  const setFileContent = useWikiStore((s) => s.setFileContent)
-  const setActiveView = useWikiStore((s) => s.setActiveView)
-
-  const handleClick = useCallback(async (e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (!project) return
-    const pp = normalizePath(project.path)
-
-    // Try exact match first, then search with the name as given
-    const candidates = [
-      `${pp}/raw/sources/${fileName}`,
-    ]
-
-    // If fileName has no extension, try to find a matching file
-    if (!fileName.includes(".")) {
-      for (const sf of cachedSourceFiles) {
-        const stem = sf.replace(/\.[^.]+$/, "")
-        if (stem === fileName || sf.startsWith(fileName)) {
-          candidates.unshift(`${pp}/raw/sources/${sf}`)
-        }
-      }
-    }
-
-    setActiveView("wiki")
-
-    for (const path of candidates) {
-      try {
-        const content = await readFile(path)
-        setSelectedFile(path)
-        setFileContent(content)
-        return
-      } catch {
-        // try next
-      }
-    }
-
-    // Fallback: just set the path even if we can't read it
-    setSelectedFile(candidates[0])
-    setFileContent(`Unable to load: ${fileName}`)
-  }, [project, fileName, setSelectedFile, setFileContent, setActiveView])
-
-  return (
-    <button
-      type="button"
-      onClick={handleClick}
-      className="inline-flex items-center gap-0.5 rounded bg-accent/50 px-1.5 py-0.5 text-xs font-medium text-primary hover:bg-accent transition-colors"
-      title={`Open source: ${fileName}`}
-    >
-      <Paperclip className="inline h-3 w-3" />
-      {fileName}
-    </button>
-  )
 }
 
 function WikiLink({ pageName, children }: { pageName: string; children: React.ReactNode }) {

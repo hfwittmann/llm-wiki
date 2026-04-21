@@ -8,7 +8,8 @@
  */
 import { vi, type Mock } from "vitest"
 import type { LlmConfig } from "@/stores/wiki-store"
-import type { ChatMessage, StreamCallbacks } from "@/lib/llm-providers"
+import type { ChatMessage } from "@/lib/llm-providers"
+import type { StreamCallbacks } from "@/lib/llm-client"
 import { createDeferred, type Deferred } from "./deferred"
 
 interface PendingCall {

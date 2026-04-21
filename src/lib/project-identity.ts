@@ -70,7 +70,7 @@ export async function ensureProjectId(projectPath: string): Promise<string> {
 // ── Global registry (Tauri plugin-store) ──────────────────────────────────
 
 async function getStore() {
-  return load(STORE_NAME, { autoSave: true })
+  return load(STORE_NAME, { autoSave: true, defaults: {} })
 }
 
 export async function loadRegistry(): Promise<ProjectRegistry> {

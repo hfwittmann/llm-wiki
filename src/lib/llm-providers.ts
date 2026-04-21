@@ -63,11 +63,11 @@ function parseGoogleLine(line: string): string | null {
   }
 }
 
-function buildOpenAiBody(messages: ChatMessage[]): unknown {
+function buildOpenAiBody(messages: ChatMessage[]): Record<string, unknown> {
   return { messages, stream: true }
 }
 
-function buildAnthropicBody(messages: ChatMessage[]): unknown {
+function buildAnthropicBody(messages: ChatMessage[]): Record<string, unknown> {
   const systemMessages = messages.filter((m) => m.role === "system")
   const conversationMessages = messages.filter((m) => m.role !== "system")
   const system = systemMessages.map((m) => m.content).join("\n") || undefined
@@ -80,7 +80,60 @@ function buildAnthropicBody(messages: ChatMessage[]): unknown {
   }
 }
 
-function buildGoogleBody(messages: ChatMessage[]): unknown {
+/**
+ * Some Anthropic-compatible third-party endpoints (MiniMax global + CN)
+ * serve the Messages API but authenticate with `Authorization: Bearer`
+ * instead of Anthropic-native `x-api-key`. See hermes-agent
+ * `agent/anthropic_adapter.py:_requires_bearer_auth` for reference.
+ *
+ * This also matters for CORS: MiniMax's preflight lists `Authorization`
+ * in `Access-Control-Allow-Headers` but NOT `x-api-key`, so sending the
+ * Anthropic-native header gets blocked by the browser before the request
+ * even leaves.
+ */
+function requiresBearerAuth(url: string): boolean {
+  const normalized = url.toLowerCase().replace(/\/+$/, "")
+  return (
+    normalized.startsWith("https://api.minimax.io/anthropic") ||
+    normalized.startsWith("https://api.minimaxi.com/anthropic")
+  )
+}
+
+/**
+ * Build the final POST URL for an Anthropic-wire endpoint given whatever
+ * base the user provided. Handles every shape we've seen in the wild:
+ *
+ *   .../v1/messages    → as-is (user pasted the full path)
+ *   .../v1             → append /messages (don't double the /v1)
+ *   .../api/paas/v4    → append /messages (arbitrary version segment)
+ *   .../anthropic      → append /v1/messages (MiniMax-style proxy base)
+ *   .../               → append /v1/messages (bare host)
+ *
+ * A bug where this naively appended "/v1/messages" caused requests to
+ * ".../v1/v1/messages" (404) whenever a user typed a URL ending in /v1.
+ */
+export function buildAnthropicUrl(base: string): string {
+  const trimmed = base.replace(/\/+$/, "")
+  if (/\/v\d+\/messages$/i.test(trimmed)) return trimmed
+  if (/\/v\d+$/i.test(trimmed)) return `${trimmed}/messages`
+  return `${trimmed}/v1/messages`
+}
+
+function buildAnthropicHeaders(apiKey: string, url: string): Record<string, string> {
+  const base: Record<string, string> = {
+    "Content-Type": JSON_CONTENT_TYPE,
+  }
+  if (requiresBearerAuth(url)) {
+    base.Authorization = `Bearer ${apiKey}`
+  } else {
+    base["x-api-key"] = apiKey
+    base["anthropic-version"] = "2023-06-01"
+    base["anthropic-dangerous-direct-browser-access"] = "true"
+  }
+  return base
+}
+
+function buildGoogleBody(messages: ChatMessage[]): Record<string, unknown> {
   const systemMessages = messages.filter((m) => m.role === "system")
   const conversationMessages = messages.filter((m) => m.role !== "system")
 
@@ -120,21 +173,18 @@ export function getProviderConfig(config: LlmConfig): ProviderConfig {
         parseStream: parseOpenAiLine,
       }
 
-    case "anthropic":
+    case "anthropic": {
+      const url = buildAnthropicUrl("https://api.anthropic.com")
       return {
-        url: "https://api.anthropic.com/v1/messages",
-        headers: {
-          "Content-Type": JSON_CONTENT_TYPE,
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
-        },
+        url,
+        headers: buildAnthropicHeaders(apiKey, url),
         buildBody: (messages) => ({
           ...buildAnthropicBody(messages),
           model,
         }),
         parseStream: parseAnthropicLine,
       }
+    }
 
     case "google":
       return {
@@ -147,9 +197,19 @@ export function getProviderConfig(config: LlmConfig): ProviderConfig {
         parseStream: parseGoogleLine,
       }
 
-    case "ollama":
+    case "ollama": {
+      // Defense-in-depth for the same reason as the custom branch: if a
+      // user pasted the full path as their Ollama URL, don't tack on
+      // another copy. Also strip a bare trailing "/v1" so the user can
+      // enter either form ("http://host:11434" or "http://host:11434/v1").
+      let ollamaBase = ollamaUrl.replace(/\/+$/, "")
+      if (/\/v1\/chat\/completions$/i.test(ollamaBase)) {
+        ollamaBase = ollamaBase.replace(/\/v1\/chat\/completions$/i, "")
+      } else if (/\/v1$/i.test(ollamaBase)) {
+        ollamaBase = ollamaBase.replace(/\/v1$/i, "")
+      }
       return {
-        url: `${ollamaUrl}/v1/chat/completions`,
+        url: `${ollamaBase}/v1/chat/completions`,
         headers: {
           "Content-Type": JSON_CONTENT_TYPE,
         },
@@ -170,25 +230,54 @@ export function getProviderConfig(config: LlmConfig): ProviderConfig {
         },
         parseStream: parseOpenAiLine,
       }
+    }
 
-    case "minimax":
+    case "minimax": {
+      // MiniMax's real API is Anthropic Messages at /anthropic, not
+      // OpenAI chat completions. customEndpoint can point at either the
+      // global (.io) or China (.minimaxi.com) regional endpoint; default
+      // to the global one when unset. Auth uses Bearer (see
+      // buildAnthropicHeaders / requiresBearerAuth above).
+      const url = buildAnthropicUrl(customEndpoint || "https://api.minimax.io/anthropic")
       return {
-        url: "https://api.minimax.io/v1/chat/completions",
-        headers: {
-          "Content-Type": JSON_CONTENT_TYPE,
-          Authorization: `Bearer ${apiKey}`,
-        },
+        url,
+        headers: buildAnthropicHeaders(apiKey, url),
         buildBody: (messages) => ({
-          ...buildOpenAiBody(messages),
+          ...buildAnthropicBody(messages),
           model,
-          temperature: 1.0,
         }),
-        parseStream: parseOpenAiLine,
+        parseStream: parseAnthropicLine,
       }
+    }
 
-    case "custom":
+    case "custom": {
+      // Custom endpoints can speak either OpenAI's /chat/completions
+      // wire or Anthropic's /v1/messages wire. The field `apiMode` on
+      // the config picks which. Default (missing) = chat_completions
+      // so pre-0.3.7 configs keep working unchanged.
+      const mode = config.apiMode ?? "chat_completions"
+      if (mode === "anthropic_messages") {
+        const url = buildAnthropicUrl(customEndpoint)
+        return {
+          url,
+          headers: buildAnthropicHeaders(apiKey, url),
+          buildBody: (messages) => ({
+            ...buildAnthropicBody(messages),
+            model,
+          }),
+          parseStream: parseAnthropicLine,
+        }
+      }
+      // Defense-in-depth: settings-side EndpointField normalizes URLs on
+      // blur, but older configs saved before that shipped may still carry
+      // a pasted "/chat/completions" tail. Don't double-append in that
+      // case, or we'd POST to ".../chat/completions/chat/completions".
+      const base = customEndpoint.replace(/\/+$/, "")
+      const url = /\/chat\/completions$/i.test(base)
+        ? base
+        : `${base}/chat/completions`
       return {
-        url: `${customEndpoint}/chat/completions`,
+        url,
         headers: {
           "Content-Type": JSON_CONTENT_TYPE,
           ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
@@ -199,6 +288,7 @@ export function getProviderConfig(config: LlmConfig): ProviderConfig {
         }),
         parseStream: parseOpenAiLine,
       }
+    }
 
     default: {
       const exhaustive: never = provider
