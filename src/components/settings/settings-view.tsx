@@ -408,6 +408,10 @@ export function SettingsView() {
           <Button onClick={handleSave} className="w-full">
             {saved ? t("settings.saved") : t("settings.save")}
           </Button>
+
+          <div className="pt-4 text-center text-xs text-muted-foreground">
+            LLM Wiki v{__APP_VERSION__}
+          </div>
         </div>
       </div>
     </div>

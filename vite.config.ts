@@ -1,9 +1,14 @@
 import path from "path"
+import { readFileSync } from "fs"
 import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
 
 const host = process.env.TAURI_DEV_HOST
+
+// Read version from package.json at config-load time so the Settings
+// UI can show the running app version without duplicating the string.
+const pkgJson = JSON.parse(readFileSync(path.resolve(__dirname, "package.json"), "utf-8"))
 
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({
@@ -11,6 +16,10 @@ export default defineConfig(async () => ({
 
   resolve: {
     alias: { "@": path.resolve(__dirname, "./src") },
+  },
+
+  define: {
+    __APP_VERSION__: JSON.stringify(pkgJson.version),
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
