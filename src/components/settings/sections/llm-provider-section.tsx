@@ -205,7 +205,17 @@ function PresetRow({
                     <button
                       key={m.value}
                       type="button"
-                      onClick={() => onChange({ apiMode: m.value })}
+                      onClick={() => {
+                        // When a preset declares different base URLs for
+                        // each wire (e.g. Bailian Coding Plan: /v1 for
+                        // OpenAI, /apps/anthropic for Anthropic), flip
+                        // the URL alongside the mode so users don't have
+                        // to know both URLs or edit manually.
+                        const patch: ProviderOverride = { apiMode: m.value }
+                        const nextBaseUrl = preset.baseUrlByMode?.[m.value]
+                        if (nextBaseUrl) patch.baseUrl = nextBaseUrl
+                        onChange(patch)
+                      }}
                       className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${
                         active
                           ? "border-primary bg-primary text-primary-foreground"

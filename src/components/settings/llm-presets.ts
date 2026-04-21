@@ -27,6 +27,14 @@ export interface LlmPreset {
   provider: Provider
   /** Suggested base URL. `customEndpoint` for custom, `ollamaUrl` for ollama, ignored for built-ins. */
   baseUrl?: string
+  /**
+   * For vendors that serve the same model catalog over both an OpenAI-
+   * compatible and an Anthropic-compatible endpoint at different URLs
+   * (e.g. Alibaba Bailian Coding Plan), list the URL per wire mode.
+   * The settings UI auto-swaps `baseUrl` when the user flips the API
+   * mode toggle — so one preset covers both protocols instead of two.
+   */
+  baseUrlByMode?: Partial<Record<CustomApiMode, string>>
   /** Suggested default model; user can override. */
   defaultModel?: string
   /**
@@ -166,23 +174,17 @@ export const LLM_PRESETS: LlmPreset[] = [
     baseUrl: "https://api.moonshot.ai/v1",
     defaultModel: "kimi-k2.6",
     apiMode: "chat_completions",
-    // k2.6 and k2.5 are the current flagship models — prefer these.
-    // Everything below them is being deprecated on 2026-05-25 by
-    // Moonshot; kept for now so users mid-migration still have access,
-    // but they are NOT the recommended choice.
+    // Current Moonshot lineup. The older `moonshot-v1-*` and
+    // `kimi-k2-0905-preview` / `-turbo-preview` ids are being
+    // deprecated on 2026-05-25 and dropped from the picker already —
+    // users who still need them can type the id into the custom input.
     suggestedModels: [
       "kimi-k2.6",
       "kimi-k2.5",
-      // ── Deprecated after 2026-05-25 ──
-      "kimi-k2-0905-preview",
-      "kimi-k2-turbo-preview",
       "kimi-k2-thinking",
-      "kimi-k2-thinking-turbo",
-      "moonshot-v1-128k",
-      "moonshot-v1-32k",
-      "moonshot-v1-8k",
+      "kimi-for-coding",
     ],
-    suggestedContextSize: 128000,
+    suggestedContextSize: 256000,
   },
   {
     id: "kimi-cn",
@@ -192,19 +194,13 @@ export const LLM_PRESETS: LlmPreset[] = [
     baseUrl: "https://api.moonshot.cn/v1",
     defaultModel: "kimi-k2.6",
     apiMode: "chat_completions",
-    // Same deprecation window as the international preset — see above.
     suggestedModels: [
       "kimi-k2.6",
       "kimi-k2.5",
-      // ── Deprecated after 2026-05-25 ──
-      "kimi-k2-0905-preview",
-      "kimi-k2-turbo-preview",
       "kimi-k2-thinking",
-      "moonshot-v1-128k",
-      "moonshot-v1-32k",
-      "moonshot-v1-8k",
+      "kimi-for-coding",
     ],
-    suggestedContextSize: 128000,
+    suggestedContextSize: 256000,
   },
   {
     id: "zhipu",
@@ -212,19 +208,23 @@ export const LLM_PRESETS: LlmPreset[] = [
     hint: "open.bigmodel.cn",
     provider: "custom",
     baseUrl: "https://open.bigmodel.cn/api/paas/v4",
-    defaultModel: "glm-4-plus",
+    defaultModel: "glm-4.6",
     apiMode: "chat_completions",
-    // Zhipu BigModel stable models (current-gen 4.x + 4.6/4.7 preview).
+    // Current-gen Zhipu BigModel lineup. glm-5 / glm-5.1 are routed
+    // through the Z.AI international endpoint (api.z.ai) so they're
+    // not on this preset's suggestion list — users targeting those
+    // should type the id or point the base URL at api.z.ai.
     suggestedModels: [
+      "glm-4.6",
+      "glm-4.5",
+      "glm-4.5-air",
+      "glm-4.5-airx",
+      "glm-4.5-flash",
       "glm-4-plus",
       "glm-4-air",
-      "glm-4-airx",
       "glm-4-flash",
-      "glm-4-long",
-      "glm-4.5",
-      "glm-4.5-flash",
-      "glm-4.6",
-      "glm-4.7",
+      "glm-zero-preview",
+      "glm-4v-plus",
     ],
     suggestedContextSize: 128000,
   },
@@ -236,8 +236,9 @@ export const LLM_PRESETS: LlmPreset[] = [
     baseUrl: "https://api.minimax.io/anthropic",
     defaultModel: "MiniMax-M2.7",
     apiMode: "anthropic_messages",
-    // hermes models.py:221-226
-    suggestedModels: ["MiniMax-M2.7", "MiniMax-M2.5", "MiniMax-M2.1", "MiniMax-M2"],
+    // Current-gen only. M2 and M2.1 are legacy and being retired —
+    // users who need them can type the id into the custom input.
+    suggestedModels: ["MiniMax-M2.7", "MiniMax-M2.5"],
     suggestedContextSize: 200000,
   },
   {
@@ -248,44 +249,28 @@ export const LLM_PRESETS: LlmPreset[] = [
     baseUrl: "https://api.minimaxi.com/anthropic",
     defaultModel: "MiniMax-M2.7",
     apiMode: "anthropic_messages",
-    suggestedModels: ["MiniMax-M2.7", "MiniMax-M2.5", "MiniMax-M2.1", "MiniMax-M2"],
+    suggestedModels: ["MiniMax-M2.7", "MiniMax-M2.5"],
     suggestedContextSize: 200000,
   },
   {
-    id: "bailian-coding-openai",
-    label: "阿里百炼 Coding Plan (OpenAI-compat)",
-    hint: "coding.dashscope.aliyuncs.com/v1",
+    id: "bailian-coding",
+    label: "阿里百炼 Coding Plan",
+    hint: "coding.dashscope.aliyuncs.com",
     provider: "custom",
+    // Default wire is OpenAI-compat. Flipping the "API 模式" toggle to
+    // Anthropic-compat auto-swaps the base URL via baseUrlByMode below,
+    // so users don't have to know the two URLs exist.
     baseUrl: "https://coding.dashscope.aliyuncs.com/v1",
     apiMode: "chat_completions",
-    // Alibaba Bailian's subscription-only "Coding Plan" endpoint. Key
-    // must come from the Bailian console's Coding Plan tab — using a
-    // regular DashScope key here will 401. Order matches the docs'
-    // "recommended" section, then "additional".
-    defaultModel: "qwen3.6-plus",
-    suggestedModels: [
-      "qwen3.6-plus",
-      "kimi-k2.5",
-      "glm-5",
-      "MiniMax-M2.5",
-      "qwen3.5-plus",
-      "qwen3-max-2026-01-23",
-      "qwen3-coder-plus",
-      "qwen3-coder-next",
-      "glm-4.7",
-    ],
-    suggestedContextSize: 131072,
-  },
-  {
-    id: "bailian-coding-anthropic",
-    label: "阿里百炼 Coding Plan (Anthropic-compat)",
-    hint: "coding.dashscope.aliyuncs.com/apps/anthropic",
-    provider: "custom",
-    baseUrl: "https://coding.dashscope.aliyuncs.com/apps/anthropic",
-    apiMode: "anthropic_messages",
-    // Same model catalog as the OpenAI-compat variant, but the wire is
-    // Anthropic Messages. Auth uses Bearer (see requiresBearerAuth in
-    // llm-providers.ts) — matches MiniMax / Bailian gateway convention.
+    baseUrlByMode: {
+      chat_completions: "https://coding.dashscope.aliyuncs.com/v1",
+      anthropic_messages: "https://coding.dashscope.aliyuncs.com/apps/anthropic",
+    },
+    // Bailian's subscription-only "Coding Plan" exposes the same model
+    // catalog on both wires. Key must come from the Bailian console's
+    // Coding Plan tab — a regular DashScope key will 401. The
+    // Anthropic-compat path uses Bearer auth (see requiresBearerAuth
+    // in llm-providers.ts), matching the MiniMax gateway convention.
     defaultModel: "qwen3.6-plus",
     suggestedModels: [
       "qwen3.6-plus",
@@ -373,19 +358,15 @@ export const LLM_PRESETS: LlmPreset[] = [
     suggestedContextSize: 128000,
   },
   {
-    id: "custom-openai",
-    label: "Custom (OpenAI-compat)",
-    hint: "Any /v1/chat/completions endpoint",
+    id: "custom",
+    label: "Custom",
+    hint: "Any OpenAI- or Anthropic-compatible endpoint",
     provider: "custom",
+    // Wire protocol is chosen via the "API 模式" toggle in the expanded
+    // panel — no need for separate presets per mode. User supplies the
+    // base URL manually (no baseUrlByMode: nothing we can auto-fill).
     apiMode: "chat_completions",
     // No suggestedModels: user knows what their gateway exposes.
-  },
-  {
-    id: "custom-anthropic",
-    label: "Custom (Anthropic-compat)",
-    hint: "Any /v1/messages endpoint",
-    provider: "custom",
-    apiMode: "anthropic_messages",
   },
 ]
 
