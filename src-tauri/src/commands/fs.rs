@@ -49,13 +49,29 @@ pub fn read_file(path: String) -> Result<String, String> {
                     p.file_name().unwrap_or_default().to_string_lossy(), e))
             }
             _ => {
-                // Try reading as text; if it fails (binary), return a friendly message
+                // Deliberate markers for IMAGE / MEDIA / LEGACY_DOC above
+                // tell the UI "we know about this format, show a stub".
+                // For everything else, a failed read_to_string is really
+                // a problem: file missing, locked, corrupt encoding, etc.
+                // Return Err so the caller can distinguish "no content"
+                // from "successfully read stub text" — the latter used to
+                // leak into the editor and overwrite the real file on
+                // Milkdown's initial re-emit.
                 match fs::read_to_string(&path) {
                     Ok(content) => Ok(content),
-                    Err(_) => {
-                        let size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-                        Ok(format!("[Binary file: {} ({:.1} KB)]",
-                            p.file_name().unwrap_or_default().to_string_lossy(), size as f64 / 1024.0))
+                    Err(e) => {
+                        let exists = p.exists();
+                        if !exists {
+                            Err(format!(
+                                "File does not exist: '{}'",
+                                path,
+                            ))
+                        } else {
+                            Err(format!(
+                                "Failed to read file '{}' as text: {} (likely binary, locked, or non-UTF-8)",
+                                path, e,
+                            ))
+                        }
                     }
                 }
             }
@@ -1064,6 +1080,13 @@ pub fn create_directory(path: String) -> Result<(), String> {
         fs::create_dir_all(&path)
             .map_err(|e| format!("Failed to create directory '{}': {}", path, e))
     })
+}
+
+/// Cheap existence check without reading or classifying the file.
+/// Returns true iff `path` refers to something on disk right now.
+#[tauri::command]
+pub fn file_exists(path: String) -> Result<bool, String> {
+    run_guarded("file_exists", || Ok(Path::new(&path).exists()))
 }
 
 #[cfg(test)]
