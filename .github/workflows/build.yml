@@ -75,3 +75,34 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+
+  package-extension:
+    name: Package browser extension
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Sync extension manifest version and zip
+        run: |
+          # Pull version from package.json so we have a single source of
+          # truth. Chrome's manifest requires numeric-only version
+          # (e.g. 0.3.5), which matches the repo's semver convention.
+          APP_VERSION=$(node -p "require('./package.json').version")
+          node -e "
+            const fs = require('fs');
+            const p = 'extension/manifest.json';
+            const m = JSON.parse(fs.readFileSync(p, 'utf-8'));
+            m.version = '${APP_VERSION}';
+            fs.writeFileSync(p, JSON.stringify(m, null, 2) + '\n');
+          "
+          mkdir -p dist-extension
+          (cd extension && zip -r "../dist-extension/llm-wiki-extension-${APP_VERSION}.zip" . -x "*.DS_Store")
+          ls -la dist-extension
+
+      - name: Attach extension zip to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.ref_name }}" dist-extension/*.zip --clobber
