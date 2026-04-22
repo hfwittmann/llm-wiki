@@ -3,8 +3,21 @@ import { invoke } from "@tauri-apps/api/core"
 import type { EmbeddingConfig } from "@/stores/wiki-store"
 import type { FileNode } from "@/types/wiki"
 import { normalizePath } from "@/lib/path-utils"
+import { getHttpFetch, isFetchNetworkError } from "@/lib/tauri-fetch"
 
 // ── Embedding API ─────────────────────────────────────────────────────────
+
+/**
+ * Track the most recent embedding failure so the UI / callers can
+ * surface *why* embedding isn't working instead of silently falling
+ * back to BM25-only retrieval. Set on every failure, cleared on every
+ * success. Read-only from outside via `getLastEmbeddingError`.
+ */
+let lastEmbeddingError: string | null = null
+
+export function getLastEmbeddingError(): string | null {
+  return lastEmbeddingError
+}
 
 async function fetchEmbedding(
   text: string,
@@ -18,7 +31,14 @@ async function fetchEmbedding(
   }
 
   try {
-    const resp = await fetch(embeddingConfig.endpoint, {
+    // Route through the Tauri HTTP plugin so user-configured embedding
+    // endpoints — local LM Studio / llama.cpp with `--embedding`, remote
+    // proxies, enterprise gateways — aren't blocked by the same CORS
+    // preflight issues the LLM path hit before we migrated it. See
+    // `src/lib/tauri-fetch.ts` for why the plugin beats browser fetch
+    // for third-party URLs.
+    const httpFetch = await getHttpFetch()
+    const resp = await httpFetch(embeddingConfig.endpoint, {
       method: "POST",
       headers,
       body: JSON.stringify({
@@ -27,12 +47,35 @@ async function fetchEmbedding(
       }),
     })
     if (!resp.ok) {
-      console.warn(`[Embedding] API error: ${resp.status} ${resp.statusText}`)
+      let detail = `${resp.status} ${resp.statusText}`
+      try {
+        const body = await resp.text()
+        if (body) detail += ` — ${body.slice(0, 200)}`
+      } catch {
+        // ignore body read errors
+      }
+      lastEmbeddingError = `API ${detail} at ${embeddingConfig.endpoint}`
+      console.warn(`[Embedding] ${lastEmbeddingError}`)
       return null
     }
     const data = await resp.json()
-    return data?.data?.[0]?.embedding ?? null
-  } catch {
+    const embedding = data?.data?.[0]?.embedding ?? null
+    if (embedding) {
+      lastEmbeddingError = null
+    } else {
+      lastEmbeddingError = `Response did not contain data[0].embedding (got ${JSON.stringify(data).slice(0, 200)})`
+      console.warn(`[Embedding] ${lastEmbeddingError}`)
+    }
+    return embedding
+  } catch (err) {
+    // Translate cross-webview fetch failures into a single actionable
+    // message that names the URL, mirroring the LLM-client treatment.
+    if (isFetchNetworkError(err)) {
+      lastEmbeddingError = `Network error reaching ${embeddingConfig.endpoint}. Check endpoint URL, API key, and connectivity.`
+    } else {
+      lastEmbeddingError = err instanceof Error ? err.message : String(err)
+    }
+    console.warn(`[Embedding] ${lastEmbeddingError}`)
     return null
   }
 }

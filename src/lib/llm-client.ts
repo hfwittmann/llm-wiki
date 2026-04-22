@@ -1,7 +1,9 @@
 import type { LlmConfig } from "@/stores/wiki-store"
 import { getProviderConfig, type RequestOverrides } from "./llm-providers"
+import { getHttpFetch, isFetchNetworkError } from "./tauri-fetch"
 
 export type { ChatMessage, RequestOverrides } from "./llm-providers"
+export { isFetchNetworkError } from "./tauri-fetch"
 
 export interface StreamCallbacks {
   onToken: (token: string) => void
@@ -10,63 +12,6 @@ export interface StreamCallbacks {
 }
 
 const DECODER = new TextDecoder()
-
-/**
- * All LLM HTTP traffic goes through Tauri's Rust-backed HTTP plugin
- * instead of the webview's native fetch. This bypasses CORS entirely —
- * the request leaves the app from Rust, never the browser engine — which
- * is the only way some third-party LLM endpoints work at all:
- *
- *   - MiniMax (CORS allow-headers omits `x-api-key`; we worked around
- *     this by using Bearer, but the plugin makes it robust)
- *   - Volcengine Ark `/api/coding/v3` (allow-headers omits `authorization`
- *     entirely — there is NO header swap that fixes it in the webview)
- *   - Any other enterprise / on-prem gateway that doesn't expect browser
- *     origins (a common class of bug across domestic Chinese clouds)
- *
- * The plugin's `fetch` API mirrors the web Fetch API shape so the rest
- * of this file looks like normal fetch code. Import is lazy + cached so
- * unit tests (vitest in node) can import this module for the helpers
- * below without the plugin's browser-only globals blowing up at load.
- */
-let pluginFetchPromise: Promise<typeof globalThis.fetch> | null = null
-function getHttpFetch(): Promise<typeof globalThis.fetch> {
-  if (!pluginFetchPromise) {
-    pluginFetchPromise = import("@tauri-apps/plugin-http")
-      .then((m) => m.fetch as unknown as typeof globalThis.fetch)
-      // In a non-Tauri context (vitest / node / storybook) the plugin's
-      // global init fails; fall back to the browser's own fetch so
-      // importing this module for helper functions still works.
-      .catch(() => globalThis.fetch)
-  }
-  return pluginFetchPromise
-}
-
-/**
- * Detect fetch-level network failures across Tauri's different webview
- * backends. Each platform phrases the same failure class differently:
- *
- *   macOS / iOS (WebKit):          Error, message === "Load failed"
- *   Windows    (Edge WebView2):    TypeError, message === "Failed to fetch"
- *   Linux      (WebKitGTK):        Error, message === "Load failed"
- *
- * They all collapse DNS / TLS / connection-refused / CORS-preflight into
- * a single opaque error with no structured detail. The only reliable
- * cross-platform signal is "it's not an AbortError and it's one of these
- * generic network error shapes", which this helper centralizes.
- */
-export function isFetchNetworkError(err: unknown): boolean {
-  if (!(err instanceof Error)) return false
-  if (err.name === "AbortError") return false
-  // Chromium / Edge WebView2
-  if (err.name === "TypeError") return true
-  // WebKit (macOS / Linux GTK)
-  if (err.message === "Load failed") return true
-  // Chromium mid-stream drop
-  if (err.message === "Failed to fetch") return true
-  if (err.message.includes("network error")) return true
-  return false
-}
 
 function parseLines(chunk: Uint8Array, buffer: string): [string[], string] {
   const text = buffer + DECODER.decode(chunk, { stream: true })
