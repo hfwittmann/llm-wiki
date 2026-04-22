@@ -167,6 +167,42 @@ export const LLM_PRESETS: LlmPreset[] = [
     suggestedContextSize: 131072,
   },
   {
+    id: "nvidia-nim",
+    label: "NVIDIA NIM",
+    hint: "integrate.api.nvidia.com",
+    provider: "custom",
+    baseUrl: "https://integrate.api.nvidia.com/v1",
+    apiMode: "chat_completions",
+    // NVIDIA's build.nvidia.com hosts both their own Nemotron family
+    // and a rotating catalog of popular third-party open-weight models
+    // behind the same OpenAI-compatible endpoint. API key is issued
+    // per-user from build.nvidia.com. Full catalog is huge and
+    // changes often — this is a practical subset; users can type any
+    // other id into the custom input.
+    defaultModel: "meta/llama-3.3-70b-instruct",
+    suggestedModels: [
+      // NVIDIA's own reasoning / agentic models
+      "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+      "nvidia/nemotron-3-super-120b-a12b",
+      "nvidia/nemotron-3-nano-30b-a3b",
+      // Meta Llama family
+      "meta/llama-3.3-70b-instruct",
+      "meta/llama-3.1-405b-instruct",
+      "meta/llama-3.1-70b-instruct",
+      // Popular third-party agentic / open-weight
+      "deepseek-ai/deepseek-v3.2",
+      "moonshotai/kimi-k2.6",
+      "qwen/qwen3.5-397b-a17b",
+      "minimaxai/minimax-m2.5",
+      "z-ai/glm5",
+      "openai/gpt-oss-120b",
+      // Mistral family
+      "mistralai/mixtral-8x22b-instruct",
+      "mistralai/mistral-large-2-instruct",
+    ],
+    suggestedContextSize: 128000,
+  },
+  {
     id: "kimi",
     label: "Kimi (Moonshot)",
     hint: "api.moonshot.ai",
