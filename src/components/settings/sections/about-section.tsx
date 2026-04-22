@@ -1,8 +1,14 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
+import { Download, RefreshCw, CheckCircle2, AlertCircle, Sparkles } from "lucide-react"
 import { clipServerStatus } from "@/commands/fs"
+import { Button } from "@/components/ui/button"
+import { useUpdateStore, shouldShowUpdateBanner } from "@/stores/update-store"
+import { checkForUpdates } from "@/lib/update-check"
+import { saveUpdateCheckState } from "@/lib/project-store"
 
 export function AboutSection() {
   const [clipStatus, setClipStatus] = useState<string>("...")
+  const updateStore = useUpdateStore()
 
   useEffect(() => {
     let alive = true
@@ -18,10 +24,55 @@ export function AboutSection() {
     }
   }, [])
 
+  const handleCheckNow = useCallback(async () => {
+    useUpdateStore.getState().setChecking(true)
+    const result = await checkForUpdates({
+      currentVersion: __APP_VERSION__,
+      repo: "nashsu/llm_wiki",
+    })
+    const now = Date.now()
+    useUpdateStore.getState().setResult(result, now)
+    // On a manual check, wipe any prior "dismissed" memo so that if
+    // the user re-clicks they see the banner again for the same
+    // version — a manual check implies "I want to see this now".
+    useUpdateStore.getState().setDismissed(null)
+    await saveUpdateCheckState({
+      enabled: useUpdateStore.getState().enabled,
+      lastCheckedAt: now,
+      dismissedVersion: null,
+    })
+  }, [])
+
+  const handleDismiss = useCallback(async () => {
+    const result = useUpdateStore.getState().lastResult
+    if (result?.kind !== "available") return
+    useUpdateStore.getState().setDismissed(result.remote)
+    await saveUpdateCheckState({
+      enabled: useUpdateStore.getState().enabled,
+      lastCheckedAt: useUpdateStore.getState().lastCheckedAt ?? Date.now(),
+      dismissedVersion: result.remote,
+    })
+  }, [])
+
+  const handleToggleAutoCheck = useCallback(async () => {
+    const next = !useUpdateStore.getState().enabled
+    useUpdateStore.getState().setEnabled(next)
+    await saveUpdateCheckState({
+      enabled: next,
+      lastCheckedAt: useUpdateStore.getState().lastCheckedAt,
+      dismissedVersion: useUpdateStore.getState().dismissedVersion,
+    })
+  }, [])
+
   const rows: Array<{ label: string; value: string; mono?: boolean }> = [
     { label: "版本", value: `v${__APP_VERSION__}`, mono: true },
     { label: "Clip Server", value: `${clipStatus}  @  127.0.0.1:19827`, mono: true },
   ]
+
+  const showBanner = shouldShowUpdateBanner(updateStore)
+  const lastCheckedLabel = updateStore.lastCheckedAt
+    ? formatRelative(updateStore.lastCheckedAt)
+    : "从未"
 
   return (
     <div className="space-y-6">
@@ -41,6 +92,64 @@ export function AboutSection() {
         ))}
       </div>
 
+      {/* ── Update check card ──────────────────────────────────── */}
+      <div className="space-y-3 rounded-md border p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-sm font-medium">更新检查</div>
+            <div className="mt-0.5 text-xs text-muted-foreground">
+              上次检查:{lastCheckedLabel}
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleCheckNow}
+            disabled={updateStore.checking}
+            className="shrink-0 gap-1.5"
+          >
+            <RefreshCw
+              className={`h-3.5 w-3.5 ${updateStore.checking ? "animate-spin" : ""}`}
+            />
+            {updateStore.checking ? "检查中…" : "立即检查"}
+          </Button>
+        </div>
+
+        {showBanner && updateStore.lastResult?.kind === "available" && (
+          <UpdateAvailableBanner
+            remote={updateStore.lastResult.remote}
+            releaseUrl={updateStore.lastResult.release.html_url}
+            releaseName={updateStore.lastResult.release.name}
+            releaseBody={updateStore.lastResult.release.body}
+            onDismiss={handleDismiss}
+          />
+        )}
+
+        {!showBanner && updateStore.lastResult?.kind === "up-to-date" && (
+          <div className="flex items-center gap-2 rounded border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-400">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            已是最新版本(v{updateStore.lastResult.local})。
+          </div>
+        )}
+
+        {updateStore.lastResult?.kind === "error" && (
+          <div className="flex items-start gap-2 rounded border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{updateStore.lastResult.message}</span>
+          </div>
+        )}
+
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={updateStore.enabled}
+            onChange={handleToggleAutoCheck}
+            className="h-3.5 w-3.5"
+          />
+          应用启动时自动检查更新(每 6 小时最多一次)
+        </label>
+      </div>
+
       <div className="rounded-md border p-4 text-sm">
         <div className="font-medium">LLM Wiki</div>
         <p className="mt-1 text-xs text-muted-foreground">
@@ -58,4 +167,69 @@ export function AboutSection() {
       </div>
     </div>
   )
+}
+
+interface UpdateAvailableBannerProps {
+  remote: string
+  releaseUrl: string
+  releaseName: string
+  releaseBody: string
+  onDismiss: () => void
+}
+
+function UpdateAvailableBanner({
+  remote,
+  releaseUrl,
+  releaseName,
+  releaseBody,
+  onDismiss,
+}: UpdateAvailableBannerProps) {
+  const handleOpen = () => {
+    // window.open with target=_blank delegates to the system browser
+    // in Tauri via the opener plugin registered in src-tauri/src/lib.rs.
+    // Works identically in a regular browser during dev mode.
+    window.open(releaseUrl, "_blank", "noopener,noreferrer")
+  }
+
+  const preview = releaseBody.slice(0, 400)
+  const truncated = releaseBody.length > preview.length
+
+  return (
+    <div className="rounded border border-primary/40 bg-primary/5 p-3">
+      <div className="flex items-center gap-2 text-sm font-medium text-primary">
+        <Sparkles className="h-4 w-4 shrink-0" />
+        有可用更新:v{remote.replace(/^v/, "")}
+      </div>
+      {releaseName && releaseName !== `v${remote.replace(/^v/, "")}` && (
+        <div className="mt-1 text-xs text-muted-foreground">{releaseName}</div>
+      )}
+      {preview.trim().length > 0 && (
+        <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-background/60 px-2 py-1.5 text-[11px] leading-relaxed text-foreground/80">
+          {preview}
+          {truncated && " …"}
+        </pre>
+      )}
+      <div className="mt-3 flex items-center gap-2">
+        <Button size="sm" onClick={handleOpen} className="gap-1.5">
+          <Download className="h-3.5 w-3.5" />
+          打开下载页
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onDismiss}>
+          稍后
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function formatRelative(timestamp: number): string {
+  const delta = Date.now() - timestamp
+  if (delta < 0) return "just now"
+  const mins = Math.floor(delta / 60_000)
+  if (mins < 1) return "刚刚"
+  if (mins < 60) return `${mins} 分钟前`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours} 小时前`
+  const days = Math.floor(hours / 24)
+  return `${days} 天前`
 }
