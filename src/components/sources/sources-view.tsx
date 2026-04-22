@@ -11,6 +11,13 @@ import { startIngest } from "@/lib/ingest"
 import { enqueueIngest, enqueueBatch } from "@/lib/ingest-queue"
 import { useTranslation } from "react-i18next"
 import { normalizePath, getFileName } from "@/lib/path-utils"
+import {
+  buildDeletedKeys,
+  cleanIndexListing,
+  stripDeletedWikilinks,
+  extractFrontmatterTitle,
+  type DeletedPageInfo,
+} from "@/lib/wiki-cleanup"
 
 export function SourcesView() {
   const { t } = useTranslation()
@@ -216,9 +223,15 @@ export function SourcesView() {
         // cache file may not exist
       }
 
-      // Step 4: Delete or update related wiki pages
-      // If a page has multiple sources, only remove this filename from sources[]; don't delete the page
+      // Step 4: Delete or update related wiki pages.
+      // - Multi-source pages: just remove this source from the `sources[]`
+      //   frontmatter list, keep the page on disk.
+      // - Single-source (or no-sources) pages: actually delete, and
+      //   capture { slug, title } so downstream cleanup can wipe every
+      //   stale reference — both the slug form (`[[kv-cache]]`) and the
+      //   title form (`[[KV Cache]]`) that the LLM emits interchangeably.
       const actuallyDeleted: string[] = []
+      const deletedInfos: DeletedPageInfo[] = []
       for (const pagePath of relatedPages) {
         try {
           const content = await readFile(pagePath)
@@ -244,7 +257,12 @@ export function SourcesView() {
             }
           }
 
-          // Single source or no sources field — delete the page
+          // Single source or no sources field — delete the page and
+          // record both its slug and its frontmatter title so index /
+          // overview / other pages can be cleaned of stale references.
+          const slug = getFileName(pagePath).replace(/\.md$/, "")
+          const title = extractFrontmatterTitle(content)
+          deletedInfos.push({ slug, title })
           await deleteFile(pagePath)
           actuallyDeleted.push(pagePath)
         } catch (err) {
@@ -252,44 +270,41 @@ export function SourcesView() {
         }
       }
 
-      // Step 5: Clean index.md — remove entries for actually deleted pages only
-      const deletedPageSlugs = actuallyDeleted.map((p) => {
-        const name = getFileName(p).replace(".md", "")
-        return name
-      }).filter(Boolean)
-
-      if (deletedPageSlugs.length > 0) {
-        try {
-          const indexPath = `${pp}/wiki/index.md`
-          const indexContent = await readFile(indexPath)
-          const updatedIndex = indexContent
-            .split("\n")
-            .filter((line) => !deletedPageSlugs.some((slug) => line.toLowerCase().includes(slug.toLowerCase())))
-            .join("\n")
-          await writeFile(indexPath, updatedIndex)
-        } catch {
-          // non-critical
-        }
-      }
-
-      // Step 6: Clean [[wikilinks]] to deleted pages from remaining wiki files
-      if (deletedPageSlugs.length > 0) {
+      // Steps 5 & 6: clean stale references from every wiki file.
+      //
+      // index.md  → drop list-item lines whose primary `[[target]]` is
+      //             a deleted page (title OR slug form matches).
+      // overview.md + everything else → strip `[[deleted]]` occurrences
+      //             in prose, replacing them with plain text (or with
+      //             the pipe display when present).
+      //
+      // Using normalized-key matching rather than the old substring
+      // `includes` check avoids two classes of real bugs: stale
+      // title-form refs surviving (`[[KV Cache]]` vs slug `kv-cache`),
+      // and innocent siblings getting wiped collaterally (deleting
+      // `ai.md` must not take `[[OpenAI]]` / `[[AI Safety]]` down).
+      const deletedKeys = buildDeletedKeys(deletedInfos)
+      if (deletedKeys.size > 0) {
         try {
           const wikiTree = await listDirectory(`${pp}/wiki`)
           const allMdFiles = flattenMdFiles(wikiTree)
           for (const file of allMdFiles) {
             try {
               const content = await readFile(file.path)
-              let updated = content
-              for (const slug of deletedPageSlugs) {
-                const linkRegex = new RegExp(`\\[\\[${slug.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:\\|([^\\]]+))?\\]\\]`, "gi")
-                updated = updated.replace(linkRegex, (_match, displayText) => displayText || slug)
-              }
+              const isIndex = file.path === `${pp}/wiki/index.md` ||
+                file.name === "index.md"
+              // For index: first drop whole entry lines for deleted
+              // pages, then still strip any secondary `[[...]]` refs
+              // to deleted pages that may appear in surviving rows.
+              const afterListing = isIndex
+                ? cleanIndexListing(content, deletedKeys)
+                : content
+              const updated = stripDeletedWikilinks(afterListing, deletedKeys)
               if (updated !== content) {
                 await writeFile(file.path, updated)
               }
             } catch {
-              // skip
+              // skip individual file failures — best-effort cleanup
             }
           }
         } catch {
