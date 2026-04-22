@@ -55,6 +55,43 @@ export function normalizeEndpoint(raw: string, mode: EndpointMode): NormalizedEn
   let url = trimmed
   const notes: string[] = []
 
+  // Sanity-check the URL can be parsed at all. `new URL(...)` catches
+  // typos like five-octet IPs ("192.168.1.1.50"), triple-t protocols
+  // ("htttp://"), stray backslashes, and similar paste mistakes that
+  // would otherwise only be diagnosed at request time by the HTTP
+  // client — a much worse user experience. Emit the warning up front
+  // and still return whatever we've got so the input field behaves.
+  let parsed: URL | null = null
+  try {
+    parsed = new URL(trimmed)
+  } catch {
+    return {
+      normalized: trimmed.replace(/\/+$/, ""),
+      changed: trimmed !== trimmed.replace(/\/+$/, ""),
+      warning: "URL is not well-formed — check for typos in the host / port / path.",
+    }
+  }
+
+  // Also catch IPv4-shaped hostnames with too many / too few octets
+  // — these parse fine as generic DNS names but will fail at lookup.
+  // If the hostname looks IP-shaped but isn't a valid IPv4, flag it.
+  const host = parsed.hostname
+  const looksNumericDotted = /^\d+(?:\.\d+)+$/.test(host)
+  if (looksNumericDotted) {
+    const octets = host.split(".")
+    const validIpv4 =
+      octets.length === 4 &&
+      octets.every((o) => {
+        const n = Number(o)
+        return Number.isInteger(n) && n >= 0 && n <= 255
+      })
+    if (!validIpv4) {
+      notes.push(
+        `Host "${host}" looks like an IPv4 address but has ${octets.length} octets (valid IPv4 has exactly 4, each 0-255).`,
+      )
+    }
+  }
+
   // Strip trailing slashes (cheap, always safe)
   url = url.replace(/\/+$/, "")
 

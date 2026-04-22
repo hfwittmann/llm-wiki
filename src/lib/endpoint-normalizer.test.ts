@@ -126,3 +126,62 @@ describe("normalizeEndpoint — anthropic_messages mode", () => {
     expect(r.normalized).toBe("https://api.anthropic.com/v1")
   })
 })
+
+describe("normalizeEndpoint — URL well-formedness catches", () => {
+  it("flags a 5-octet IP-shaped host as malformed (real user paste)", () => {
+    // Real user paste: "http://192.168.1.1.50:8000/v1".
+    // WHATWG URL's IPv4 parser actually rejects this at `new URL()`
+    // time with a TypeError, so it surfaces via the generic
+    // "URL not well-formed" branch — but it DOES surface, which is the
+    // point. Before this guard, the browser fetch failure was the
+    // user's only signal, with nothing to say it was a typo.
+    const r = normalizeEndpoint("http://192.168.1.1.50:8000/v1", "chat_completions")
+    expect(r.warning).toBeDefined()
+    expect(r.warning!.toLowerCase()).toMatch(/well-formed|typo|ipv4|octets/)
+  })
+
+  // 3-octet hosts like "10.0.0" are silently normalised to "10.0.0.0"
+  // by WHATWG URL parsing (IPv4 shorthand expansion), so they don't
+  // actually reach our regex as 3-octet. Not an issue in practice.
+
+  it("rejects an octet > 255 at the URL-parsing layer", () => {
+    // WHATWG URL treats "999" as invalid IPv4 too, so `new URL()`
+    // throws outright — our malformed-URL branch catches it first
+    // with the generic "not well-formed" message. Either way the user
+    // is informed the URL is broken before the HTTP client sees it.
+    const r = normalizeEndpoint("http://192.168.1.999:8080/v1", "chat_completions")
+    expect(r.warning).toBeDefined()
+    expect(r.warning!.toLowerCase()).toMatch(/well-formed|typo|ipv4|255/)
+  })
+
+  it("accepts a well-formed IPv4 host with port and path", () => {
+    const r = normalizeEndpoint("http://192.168.1.50:8080/v1", "chat_completions")
+    expect(r.warning).toBeUndefined()
+    expect(r.normalized).toBe("http://192.168.1.50:8080/v1")
+  })
+
+  it("does NOT flag DNS-name-shaped hosts that contain dots", () => {
+    // `api.openai.com` has dots but isn't IP-shaped (non-numeric
+    // labels) — shouldn't trigger the IPv4 check.
+    const r = normalizeEndpoint("https://api.openai.com/v1", "chat_completions")
+    expect(r.warning).toBeUndefined()
+  })
+
+  it("rejects an unparseable URL (triple-t protocol typo)", () => {
+    const r = normalizeEndpoint("htttp://api.openai.com/v1", "chat_completions")
+    // missingProtocol fires first since /^https?:\/\//i doesn't match.
+    expect(r.warning).toMatch(/https?:\/\//i)
+  })
+
+  it("rejects URL with illegal characters", () => {
+    const r = normalizeEndpoint("https://api.openai.com:port/v1", "chat_completions")
+    // Port "port" isn't numeric → new URL throws.
+    expect(r.warning).toBeDefined()
+    expect(r.warning!.toLowerCase()).toMatch(/well-formed|typo/)
+  })
+
+  it("accepts localhost host (non-IP) without flagging", () => {
+    const r = normalizeEndpoint("http://localhost:11434/v1", "chat_completions")
+    expect(r.warning).toBeUndefined()
+  })
+})
