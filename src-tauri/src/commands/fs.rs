@@ -165,36 +165,37 @@ fn pdfium_candidate_paths() -> Vec<String> {
     }
 
     // Tauri-resolved resource directory (set during setup()).
+    //
+    // Tauri's `bundle.resources` array form preserves relative paths,
+    // so `"pdfium/pdfium.dll"` in tauri.<target>.conf.json lands at
+    // `<resource_dir>/pdfium/pdfium.dll` — NOT at the root. Older
+    // versions of this function only probed the root, which made
+    // Windows installs fail with "Failed to locate Pdfium library"
+    // (OS error 126) even though the DLL was in the installer.
+    // We now probe both the `pdfium/` subdir (where the current
+    // bundle config actually puts it) and the root (in case a future
+    // config change flattens it).
     if let Some(resource_dir) = RESOURCE_DIR_HINT.get() {
+        let push = |v: &mut Vec<String>, p: std::path::PathBuf| {
+            v.push(p.to_string_lossy().into_owned());
+        };
         #[cfg(target_os = "macos")]
-        v.push(
-            resource_dir
-                .join("libpdfium.dylib")
-                .to_string_lossy()
-                .into_owned(),
-        );
+        {
+            push(&mut v, resource_dir.join("pdfium").join("libpdfium.dylib"));
+            push(&mut v, resource_dir.join("libpdfium.dylib"));
+        }
         #[cfg(target_os = "windows")]
         {
-            v.push(
-                resource_dir
-                    .join("pdfium.dll")
-                    .to_string_lossy()
-                    .into_owned(),
-            );
-            v.push(
-                resource_dir
-                    .join("libpdfium.dll")
-                    .to_string_lossy()
-                    .into_owned(),
-            );
+            push(&mut v, resource_dir.join("pdfium").join("pdfium.dll"));
+            push(&mut v, resource_dir.join("pdfium").join("libpdfium.dll"));
+            push(&mut v, resource_dir.join("pdfium.dll"));
+            push(&mut v, resource_dir.join("libpdfium.dll"));
         }
         #[cfg(target_os = "linux")]
-        v.push(
-            resource_dir
-                .join("libpdfium.so")
-                .to_string_lossy()
-                .into_owned(),
-        );
+        {
+            push(&mut v, resource_dir.join("pdfium").join("libpdfium.so"));
+            push(&mut v, resource_dir.join("libpdfium.so"));
+        }
     }
 
     if let Ok(exe) = std::env::current_exe() {
@@ -207,9 +208,11 @@ fn pdfium_candidate_paths() -> Vec<String> {
             {
                 // Tauri .app bundle layout:
                 //   Contents/MacOS/<binary>
-                //   Contents/Frameworks/libpdfium.dylib   ← preferred
+                //   Contents/Frameworks/libpdfium.dylib   ← preferred (macOS config uses bundle.macOS.frameworks)
                 //   Contents/Resources/libpdfium.dylib    ← fallback
+                //   Contents/Resources/pdfium/libpdfium.dylib  ← if array-form resources ever used on macOS
                 push(&mut v, exe_dir.join("../Frameworks/libpdfium.dylib"));
+                push(&mut v, exe_dir.join("../Resources/pdfium/libpdfium.dylib"));
                 push(&mut v, exe_dir.join("../Resources/libpdfium.dylib"));
                 push(&mut v, exe_dir.join("libpdfium.dylib"));
             }
@@ -217,16 +220,24 @@ fn pdfium_candidate_paths() -> Vec<String> {
             #[cfg(target_os = "windows")]
             {
                 // bblanchon/pdfium-binaries ships the Windows DLL as
-                // `pdfium.dll` (no `lib` prefix). Try both.
+                // `pdfium.dll` (no `lib` prefix). Probe flat and
+                // `pdfium/` subdir forms at both exe root and the
+                // classic Tauri `resources/` sibling — covers every
+                // layout variant we've observed across NSIS / MSI /
+                // portable builds.
                 push(&mut v, exe_dir.join("pdfium.dll"));
+                push(&mut v, exe_dir.join("pdfium").join("pdfium.dll"));
                 push(&mut v, exe_dir.join("libpdfium.dll"));
                 push(&mut v, exe_dir.join("resources").join("pdfium.dll"));
+                push(&mut v, exe_dir.join("resources").join("pdfium").join("pdfium.dll"));
             }
 
             #[cfg(target_os = "linux")]
             {
                 push(&mut v, exe_dir.join("libpdfium.so"));
+                push(&mut v, exe_dir.join("pdfium").join("libpdfium.so"));
                 push(&mut v, exe_dir.join("resources").join("libpdfium.so"));
+                push(&mut v, exe_dir.join("resources").join("pdfium").join("libpdfium.so"));
                 push(&mut v, exe_dir.join("../lib/libpdfium.so"));
             }
         }
