@@ -13,6 +13,7 @@ import { buildRetrievalGraph, getRelatedNodes } from "@/lib/graph-relevance"
 import { normalizePath, getFileName, getRelativePath } from "@/lib/path-utils"
 import { getOutputLanguage, buildLanguageReminder } from "@/lib/output-language"
 import { isGreeting } from "@/lib/greeting-detector"
+import { computeContextBudget } from "@/lib/context-budget"
 
 // Store the page mapping from the last query so SourceFilesBar can show which pages were cited
 export let lastQueryPages: { title: string; path: string }[] = []
@@ -189,12 +190,16 @@ export function ChatPanel() {
       } else if (project) {
         const pp = normalizePath(project.path)
         const dataVersion = useWikiStore.getState().dataVersion
-        const maxCtx = llmConfig.maxContextSize || 204800
 
-        // ── Budget allocation ──────────────────────────────────
-        const INDEX_BUDGET = Math.floor(maxCtx * 0.05)
-        const PAGE_BUDGET = Math.floor(maxCtx * 0.6)
-        const MAX_PAGE_SIZE = Math.min(Math.floor(PAGE_BUDGET * 0.3), 30_000)
+        // ── Budget allocation (see context-budget.ts) ─────────
+        // Page budget scales with the LLM's context window; we now
+        // also reserve ~15% as headroom for the response so the
+        // model isn't truncated mid-sentence on a packed prompt.
+        const {
+          indexBudget: INDEX_BUDGET,
+          pageBudget: PAGE_BUDGET,
+          maxPageSize: MAX_PAGE_SIZE,
+        } = computeContextBudget(llmConfig.maxContextSize)
 
         const [rawIndex, purpose] = await Promise.all([
           readFile(`${pp}/wiki/index.md`).catch(() => ""),
