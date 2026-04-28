@@ -227,8 +227,6 @@ export async function searchWiki(
   const effectiveTokens = tokens.length > 0 ? tokens : [query.trim().toLowerCase()]
   const results: SearchResult[] = []
 
-  const tSearchStart = performance.now()
-
   // Search wiki pages.
   //
   // We deliberately do NOT also search `raw/sources/` here anymore.

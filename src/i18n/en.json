@@ -120,7 +120,9 @@
         "apiKeyPlaceholder": "Enter your API key",
         "savedBadge": "saved",
         "configuredBadge": "configured",
-        "activeBadge": "● active"
+        "activeBadge": "● active",
+        "endpointPreviewWillUse": "Will resolve to",
+        "endpointPreviewAutoApply": "(applied automatically when you leave the input)"
       },
       "embedding": {
         "title": "Vector Embeddings",

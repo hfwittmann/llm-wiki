@@ -335,8 +335,13 @@ function EndpointField({ value, mode, placeholder, onChange }: EndpointFieldProp
           <div className="min-w-0 flex-1 space-y-0.5">
             {preview.changed && (
               <div>
-                将使用 <code className="break-all rounded bg-background/60 px-1 py-0.5 font-mono">{preview.normalized || "(empty)"}</code>
-                <span className="ml-1 text-muted-foreground">(离开输入框时自动套用)</span>
+                {t("settings.sections.llm.endpointPreviewWillUse")}{" "}
+                <code className="break-all rounded bg-background/60 px-1 py-0.5 font-mono">
+                  {preview.normalized || "(empty)"}
+                </code>
+                <span className="ml-1 text-muted-foreground">
+                  {t("settings.sections.llm.endpointPreviewAutoApply")}
+                </span>
               </div>
             )}
             {preview.warning && <div>{preview.warning}</div>}

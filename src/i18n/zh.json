@@ -120,7 +120,9 @@
         "apiKeyPlaceholder": "请输入 API Key",
         "savedBadge": "已保存",
         "configuredBadge": "已配置",
-        "activeBadge": "● 活跃"
+        "activeBadge": "● 活跃",
+        "endpointPreviewWillUse": "将使用",
+        "endpointPreviewAutoApply": "（离开输入框时自动套用）"
       },
       "embedding": {
         "title": "向量嵌入",
