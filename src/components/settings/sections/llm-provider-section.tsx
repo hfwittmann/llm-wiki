@@ -300,6 +300,7 @@ interface EndpointFieldProps {
  * blur, if normalization would change the value, we apply it.
  */
 function EndpointField({ value, mode, placeholder, onChange }: EndpointFieldProps) {
+  const { t } = useTranslation()
   const preview = useMemo(() => normalizeEndpoint(value, mode), [value, mode])
 
   function handleBlur() {
