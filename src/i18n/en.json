@@ -15,6 +15,11 @@
     "updateAvailable": "Update available",
     "updateAvailableSuffix": " · update"
   },
+  "updateBanner": {
+    "message": "Version {{version}} is available",
+    "openDownload": "Open download page",
+    "dismiss": "Dismiss"
+  },
   "welcome": {
     "newProject": "New Project",
     "openProject": "Open Project",

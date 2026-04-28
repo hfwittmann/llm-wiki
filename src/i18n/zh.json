@@ -15,6 +15,11 @@
     "updateAvailable": "有可用更新",
     "updateAvailableSuffix": " · 有更新"
   },
+  "updateBanner": {
+    "message": "新版本 {{version}} 已发布",
+    "openDownload": "打开下载页",
+    "dismiss": "关闭"
+  },
   "welcome": {
     "newProject": "新建项目",
     "openProject": "打开项目",
