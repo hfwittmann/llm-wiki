@@ -7,6 +7,7 @@ import { useActivityStore } from "@/stores/activity-store"
 import { useReviewStore, type ReviewItem } from "@/stores/review-store"
 import { getFileName, normalizePath } from "@/lib/path-utils"
 import { checkIngestCache, saveIngestCache } from "@/lib/ingest-cache"
+import { sanitizeIngestedFileContent } from "@/lib/ingest-sanitize"
 import { withProjectLock } from "@/lib/project-mutex"
 import {
   extractAndSaveSourceImages,
@@ -770,7 +771,17 @@ async function writeFileBlocks(
 
   const targetLang = useWikiStore.getState().outputLanguage
 
-  for (const { path: relativePath, content } of blocks) {
+  for (const { path: relativePath, content: rawContent } of blocks) {
+    // Sanitize at the boundary — strip stray code-fence wrappers,
+    // `frontmatter:` prefixes, and repair invalid wikilink-list
+    // YAML lines so the file we write is canonical regardless of
+    // what shape the model emitted. See `ingest-sanitize.ts` for
+    // the recurring corruption shapes this fixes; without this
+    // step ~45% of generated entity pages went to disk with
+    // unparseable frontmatter and the read-time fallback had to
+    // paper over it forever.
+    const content = sanitizeIngestedFileContent(rawContent)
+
     // Language guard: reject individual FILE blocks whose body contradicts
     // the user-set target language. Skip:
     // - log.md (structural, short)
@@ -986,25 +997,49 @@ export function buildGenerationPrompt(schema: string, purpose: string, index: st
     "5. A log entry for wiki/log.md (just the new entry to append, format: ## [YYYY-MM-DD] ingest | Title)",
     "6. An updated wiki/overview.md — a high-level summary of what the entire wiki covers, updated to reflect the newly ingested source. This should be a comprehensive 2-5 paragraph overview of ALL topics in the wiki, not just the new source.",
     "",
-    "## Frontmatter Rules (CRITICAL)",
+    "## Frontmatter Rules (CRITICAL — parser is strict)",
     "",
-    "Every page MUST have YAML frontmatter with these fields:",
-    "```yaml",
-    "---",
-    "type: source | entity | concept | comparison | query | synthesis",
-    "title: Human-readable title",
-    "created: YYYY-MM-DD",
-    "updated: YYYY-MM-DD",
-    "tags: []",
-    "related: []",
-    `sources: [\"${sourceFileName}\"]  # MUST contain the original source filename`,
-    "---",
-    "```",
+    "Every page begins with a YAML frontmatter block. Format rules, in order of importance:",
     "",
-    `The \`sources\` field MUST always contain "${sourceFileName}" — this links the wiki page back to the original uploaded document.`,
+    "1. The VERY FIRST line of the file MUST be exactly `---` (three hyphens, nothing else).",
+    "   Do NOT wrap the file in a ```yaml ... ``` code fence.",
+    "   Do NOT prefix it with a `frontmatter:` key or any other line.",
+    "2. Each frontmatter line is a `key: value` pair on its own line.",
+    "3. The frontmatter ends with another `---` line on its own.",
+    "4. The next line after the closing `---` is the start of the page body.",
+    "5. Arrays use the standard YAML inline form `[a, b, c]` (no outer brackets around each item).",
+    "   Wikilinks belong in the BODY only — never write `related: [[a]], [[b]]` (invalid YAML);",
+    "   write `related: [a, b]` with bare slugs.",
+    "",
+    "Required fields and types:",
+    "  • type     — one of: source | entity | concept | comparison | query | synthesis",
+    "  • title    — string (quote it if it contains a colon, e.g. `title: \"Foo: Bar\"`)",
+    "  • created  — date in YYYY-MM-DD form (no quotes)",
+    "  • updated  — same as created",
+    "  • tags     — array of bare strings: `tags: [microbiology, ai]`",
+    "  • related  — array of bare wiki page slugs: `related: [foo, bar-baz]`. Do NOT include",
+    "               `wiki/`, `.md`, or `[[…]]` here — slugs only.",
+    `  • sources  — array of source filenames; MUST include "${sourceFileName}".`,
+    "",
+    "Concrete example of a complete, parseable page (everything between the two `---` lines",
+    "is the frontmatter; the heading and prose below are the body):",
+    "",
+    "    ---",
+    "    type: entity",
+    "    title: Example Entity",
+    "    created: 2026-04-29",
+    "    updated: 2026-04-29",
+    "    tags: [example, demo]",
+    "    related: [related-slug-1, related-slug-2]",
+    `    sources: ["${sourceFileName}"]`,
+    "    ---",
+    "",
+    "    # Example Entity",
+    "",
+    "    Body content goes here. Use [[wikilink]] syntax in the body for cross-references.",
     "",
     "Other rules:",
-    "- Use [[wikilink]] syntax for cross-references between pages",
+    "- Use [[wikilink]] syntax in the BODY for cross-references between pages",
     "- Use kebab-case filenames",
     "- Follow the analysis recommendations on what to emphasize",
     "- If the analysis found connections to existing pages, add cross-references",

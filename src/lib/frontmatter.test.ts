@@ -116,6 +116,60 @@ describe("parseFrontmatter", () => {
     expect(r.frontmatter?.sources).toEqual(["research--2026-04-07.md"])
   })
 
+  it("locates a frontmatter block prefixed by a stray code fence line (LLM corruption)", () => {
+    const content =
+      "```yaml\n---\ntype: entity\ntitle: \"Accumulibacter\"\n---\n\n# Accumulibacter\n\nbody\n```"
+    const r = parseFrontmatter(content)
+    expect(r.frontmatter?.type).toBe("entity")
+    expect(r.frontmatter?.title).toBe("Accumulibacter")
+    // Body retains the trailing closing fence — that's a renderer
+    // problem (markdown shows it as an unbalanced ```) not the
+    // parser's job. We only commit to extracting frontmatter.
+    expect(r.body.startsWith("# Accumulibacter")).toBe(true)
+  })
+
+  it("locates a frontmatter block prefixed by a `frontmatter:` key (LLM corruption)", () => {
+    const content =
+      "frontmatter:\n---\ntype: entity\ntitle: LSTM\n---\n\n# LSTM\n\nbody"
+    const r = parseFrontmatter(content)
+    expect(r.frontmatter?.type).toBe("entity")
+    expect(r.frontmatter?.title).toBe("LSTM")
+  })
+
+  it("does not pick up a `---` horizontal rule deep in the body as frontmatter", () => {
+    // The fallback-search window is small enough to skip horizontal
+    // rules used as section dividers below paragraphs of body text.
+    const content =
+      "# Heading\n\nfirst paragraph\n\nsecond paragraph\n\n---\n\nthird paragraph after rule"
+    const r = parseFrontmatter(content)
+    expect(r.frontmatter).toBeNull()
+    expect(r.body).toBe(content)
+  })
+
+  it("repairs `key: [[a]], [[b]]` (LLM-emitted invalid wikilink list) via retry", () => {
+    const content =
+      "---\ntype: entity\ntitle: LTTC\nrelated: [[riyuu-jiaoben]], [[zi-yuan-bu]], [[wai-wu]]\n---\nbody"
+    const r = parseFrontmatter(content)
+    expect(r.frontmatter?.type).toBe("entity")
+    expect(r.frontmatter?.related).toEqual([
+      "[[riyuu-jiaoben]]",
+      "[[zi-yuan-bu]]",
+      "[[wai-wu]]",
+    ])
+  })
+
+  it("doesn't mangle a legitimate nested-array YAML value during repair", () => {
+    // Repair only fires when the FIRST yaml.load throws. Legitimate
+    // nested arrays parse on the first pass and are left alone.
+    const content = `---\nmatrix: [[1, 2], [3, 4]]\n---\nbody`
+    const r = parseFrontmatter(content)
+    // Nested arrays come through normalize as a JSON-stringified
+    // string per element, which is acceptable surface behavior — the
+    // important part is we didn't crash or corrupt the structure.
+    expect(r.frontmatter).not.toBeNull()
+    expect(r.body).toBe("body")
+  })
+
   it("matches the real BOD entity frontmatter (quoted wikilink items in block array)", () => {
     const content =
       `---\ntype: entity\ntitle: BOD（生化需氧量）\ncreated: 2026-04-07\nupdated: 2026-04-07\ntags: [水质指标, 环境监测, 污水处理, 核心参数]\nrelated:\n  - "[[nh3-n]]"\n  - "[[soft-sensor-watertreatment]]"\n  - "[[ai-effluent-water-quality-prediction]]"\n  - "[[digital-twin-wastewater]]"\nsources: ["research-ai-2026-04-07.md"]\n---\n\n# Body`
