@@ -151,8 +151,15 @@ export function SettingsView() {
   )
 
   // Resync draft from store if it changes out-of-band (e.g. project switch).
+  // IMPORTANT: keep the current draft.uiLanguage instead of re-reading
+  // `i18n.language`. handleSave calls multiple zustand setters before it
+  // calls `i18n.changeLanguage` at the end, and each setter triggers this
+  // effect mid-save — which used to clobber the user's pending language
+  // pick with the still-stale `i18n.language`. The next save would then
+  // see draft.uiLanguage out of sync with i18n.language and silently
+  // revert the UI to the previous language.
   useEffect(() => {
-    setDraftState(
+    setDraftState((prev) =>
       initialDraft(
         llmConfig,
         searchApiConfig,
@@ -161,7 +168,7 @@ export function SettingsView() {
         outputLanguage,
         proxyConfig,
         maxHistoryMessages,
-        i18n.language,
+        prev.uiLanguage,
       ),
     )
   }, [
