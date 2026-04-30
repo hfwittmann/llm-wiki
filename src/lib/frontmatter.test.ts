@@ -116,16 +116,46 @@ describe("parseFrontmatter", () => {
     expect(r.frontmatter?.sources).toEqual(["research--2026-04-07.md"])
   })
 
-  it("locates a frontmatter block prefixed by a stray code fence line (LLM corruption)", () => {
+  it("locates a frontmatter block wrapped in ```yaml … ``` and strips the closing fence", () => {
     const content =
-      "```yaml\n---\ntype: entity\ntitle: \"Accumulibacter\"\n---\n\n# Accumulibacter\n\nbody\n```"
+      "```yaml\n---\ntype: entity\ntitle: \"Accumulibacter\"\n---\n```\n\n# Accumulibacter\n\nbody"
     const r = parseFrontmatter(content)
     expect(r.frontmatter?.type).toBe("entity")
     expect(r.frontmatter?.title).toBe("Accumulibacter")
-    // Body retains the trailing closing fence — that's a renderer
-    // problem (markdown shows it as an unbalanced ```) not the
-    // parser's job. We only commit to extracting frontmatter.
-    expect(r.body.startsWith("# Accumulibacter")).toBe(true)
+    // Both the opening AND closing code-fence lines are gone so
+    // the body the renderer sees is balanced markdown. Without
+    // stripping, ReactMarkdown reads the orphan ``` as a
+    // never-closing code block and renders every heading /
+    // list / table below as raw source.
+    expect(r.body).not.toContain("```")
+    expect(r.body.trimStart().startsWith("# Accumulibacter")).toBe(true)
+  })
+
+  it("strips the closing fence even when the closing ``` is on the line directly after ---", () => {
+    // Real-user file pattern (硝化菌.md): the ``` closing fence
+    // lands immediately after the closing ---, with no blank
+    // line between them.
+    const content = [
+      "```yaml",
+      "---",
+      "type: entity",
+      'title: "硝化菌"',
+      "tags: [微生物]",
+      "---",
+      "```",
+      "",
+      "# 硝化菌",
+      "",
+      "## 基本信息",
+      "",
+      "- **类型**：自养型好氧细菌",
+    ].join("\n")
+    const r = parseFrontmatter(content)
+    expect(r.frontmatter?.type).toBe("entity")
+    expect(r.frontmatter?.title).toBe("硝化菌")
+    expect(r.body).not.toContain("```")
+    expect(r.body).toContain("# 硝化菌")
+    expect(r.body).toContain("## 基本信息")
   })
 
   it("locates a frontmatter block prefixed by a `frontmatter:` key (LLM corruption)", () => {

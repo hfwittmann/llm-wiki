@@ -101,10 +101,31 @@ function locateFrontmatterBlock(
   }
 
   const rawBlock = content.slice(openIdx, openIdx + fallback[0].length - 1)
+  const bodyAfterFm = content.slice(openIdx + rawBlock.length)
+
+  // If the prefix that pushed us into the fallback is a ```yaml /
+  // ```yml (or bare ```) code fence opener, strip the matching
+  // CLOSING fence at the head of the body too. Without this, a
+  // legacy LLM-corrupted page that wrapped its frontmatter in a
+  // code fence renders correctly up top (the parser still
+  // recovered the YAML) but the body opens with an orphan ```
+  // that ReactMarkdown treats as a never-closed code block —
+  // every heading / list / table below appears as raw source.
+  const prefix = content.slice(0, openIdx)
+  const prefixIsYamlFence = /^\s*```(?:yaml|yml)?\s*\r?\n$/i.test(prefix)
+  if (prefixIsYamlFence) {
+    const stripped = bodyAfterFm.replace(/^\s*```\s*(?:\r?\n|$)/, "")
+    return {
+      yamlPayload: fallback[1],
+      rawBlock,
+      body: stripped,
+    }
+  }
+
   return {
     yamlPayload: fallback[1],
     rawBlock,
-    body: content.slice(openIdx + rawBlock.length),
+    body: bodyAfterFm,
   }
 }
 
