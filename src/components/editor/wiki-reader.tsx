@@ -8,6 +8,8 @@ import { transformWikilinks } from "@/lib/wikilink-transform"
 import { resolveRelatedSlug } from "@/lib/wiki-page-resolver"
 import { resolveMarkdownImageSrc } from "@/lib/markdown-image-resolver"
 import { normalizePath } from "@/lib/path-utils"
+import { detectLanguage } from "@/lib/detect-language"
+import { getHtmlLang, getTextDirection } from "@/lib/language-metadata"
 import { useWikiStore } from "@/stores/wiki-store"
 import { MermaidDiagram, unwrapMermaidPre } from "@/components/mermaid-diagram"
 
@@ -33,6 +35,9 @@ export function WikiReader({ body }: WikiReaderProps) {
   const setSelectedFile = useWikiStore((s) => s.setSelectedFile)
 
   const transformed = useMemo(() => transformWikilinks(body), [body])
+  const renderLanguage = detectLanguage(body)
+  const direction = getTextDirection(renderLanguage)
+  const htmlLang = getHtmlLang(renderLanguage)
   const projectPath = project ? normalizePath(project.path) : null
   const wikiRoot = projectPath ? `${projectPath}/wiki` : null
 
@@ -52,7 +57,12 @@ export function WikiReader({ body }: WikiReaderProps) {
   }
 
   return (
-    <div className="prose prose-invert min-w-0 max-w-none">
+    <div
+      className="prose prose-invert min-w-0 max-w-none"
+      dir={direction}
+      lang={htmlLang}
+      style={{ textAlign: "start" }}
+    >
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex]}
@@ -103,7 +113,7 @@ export function WikiReader({ body }: WikiReaderProps) {
           ),
           th: ({ children, ...props }) => (
             <th
-              className="border border-border/80 bg-muted px-3 py-1.5 text-left font-semibold"
+              className="border border-border/80 bg-muted px-3 py-1.5 text-start font-semibold"
               {...props}
             >
               {children}
@@ -117,13 +127,13 @@ export function WikiReader({ body }: WikiReaderProps) {
           pre: ({ children, ...props }) => {
             const mermaid = unwrapMermaidPre(children)
             if (mermaid) return <>{mermaid}</>
-            return <pre {...props}>{children}</pre>
+            return <pre dir="ltr" style={{ textAlign: "left" }} {...props}>{children}</pre>
           },
           code: ({ className, children, ...props }) => {
             const lang = className?.replace("language-", "")
             const codeText = String(children).replace(/\n$/, "")
             if (lang === "mermaid") return <MermaidDiagram code={codeText} />
-            return <code className={className} {...props}>{children}</code>
+            return <code dir="ltr" className={className} {...props}>{children}</code>
           },
         }}
       >

@@ -82,6 +82,7 @@ function initialDraft(
     customEndpoint: llm.customEndpoint,
     maxContextSize: llm.maxContextSize ?? 204800,
     apiMode: llm.apiMode,
+    reasoning: llm.reasoning,
     embeddingEnabled: embed.enabled,
     embeddingEndpoint: embed.endpoint,
     embeddingApiKey: embed.apiKey,
@@ -116,6 +117,7 @@ export function SettingsView() {
   const setMultimodalConfig = useWikiStore((s) => s.setMultimodalConfig)
   const outputLanguage = useWikiStore((s) => s.outputLanguage)
   const setOutputLanguage = useWikiStore((s) => s.setOutputLanguage)
+  const project = useWikiStore((s) => s.project)
   const proxyConfig = useWikiStore((s) => s.proxyConfig)
   const setProxyConfig = useWikiStore((s) => s.setProxyConfig)
   const maxHistoryMessages = useChatStore((s) => s.maxHistoryMessages)
@@ -194,6 +196,7 @@ export function SettingsView() {
       customEndpoint: draft.customEndpoint,
       maxContextSize: draft.maxContextSize,
       apiMode: draft.provider === "custom" ? draft.apiMode : undefined,
+      reasoning: draft.reasoning,
     }
     const newEmbed = {
       enabled: draft.embeddingEnabled,
@@ -234,7 +237,7 @@ export function SettingsView() {
     setMultimodalConfig(newMultimodal)
     await saveMultimodalConfig(newMultimodal)
     setOutputLanguage(draft.outputLanguage as typeof outputLanguage)
-    await saveOutputLanguage(draft.outputLanguage as typeof outputLanguage)
+    await saveOutputLanguage(draft.outputLanguage as typeof outputLanguage, project?.id)
     setProxyConfig(newProxy)
     await saveProxyConfig(newProxy)
     // Apply the proxy env vars LIVE so the next outbound request
@@ -263,6 +266,7 @@ export function SettingsView() {
     setProxyConfig,
     setMaxHistoryMessages,
     outputLanguage,
+    project,
   ])
 
   const body = useMemo(() => {

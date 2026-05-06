@@ -165,14 +165,23 @@ export async function loadLanguage(): Promise<string | null> {
 }
 
 const OUTPUT_LANGUAGE_KEY = "outputLanguage"
+const PROJECT_OUTPUT_LANGUAGE_KEY = "projectOutputLanguages"
 
-export async function saveOutputLanguage(lang: OutputLanguage): Promise<void> {
+export async function saveOutputLanguage(lang: OutputLanguage, projectId?: string): Promise<void> {
   const store = await getStore()
+  if (projectId) {
+    const existing = (await store.get<Record<string, OutputLanguage>>(PROJECT_OUTPUT_LANGUAGE_KEY)) ?? {}
+    await store.set(PROJECT_OUTPUT_LANGUAGE_KEY, { ...existing, [projectId]: lang })
+  }
   await store.set(OUTPUT_LANGUAGE_KEY, lang)
 }
 
-export async function loadOutputLanguage(): Promise<OutputLanguage | null> {
+export async function loadOutputLanguage(projectId?: string): Promise<OutputLanguage | null> {
   const store = await getStore()
+  if (projectId) {
+    const projectLanguages = await store.get<Record<string, OutputLanguage>>(PROJECT_OUTPUT_LANGUAGE_KEY)
+    return projectLanguages?.[projectId] ?? null
+  }
   return (await store.get<OutputLanguage>(OUTPUT_LANGUAGE_KEY)) ?? null
 }
 

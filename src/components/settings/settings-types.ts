@@ -1,4 +1,5 @@
 import type { CustomApiMode } from "./llm-presets"
+import type { ReasoningConfig } from "@/stores/wiki-store"
 
 /**
  * Shape of the draft state each section reads from and writes into.
@@ -15,6 +16,7 @@ export interface SettingsDraft {
   customEndpoint: string
   maxContextSize: number
   apiMode: CustomApiMode | undefined
+  reasoning: ReasoningConfig | undefined
 
   // Embedding
   embeddingEnabled: boolean

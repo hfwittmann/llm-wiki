@@ -29,6 +29,7 @@ export const OUTPUT_LANGUAGE_OPTIONS = [
   { value: "Italian", label: "Italiano (Italian)" },
   { value: "Russian", label: "Русский (Russian)" },
   { value: "Arabic", label: "العربية (Arabic)" },
+  { value: "Persian", label: "فارسی (Persian / Farsi)" },
   { value: "Hindi", label: "हिन्दी (Hindi)" },
   { value: "Turkish", label: "Türkçe (Turkish)" },
   { value: "Dutch", label: "Nederlands (Dutch)" },

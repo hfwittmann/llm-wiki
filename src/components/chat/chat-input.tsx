@@ -51,6 +51,7 @@ export function ChatInput({ onSend, onStop, isStreaming, placeholder }: ChatInpu
       <textarea
         ref={textareaRef}
         value={value}
+        dir="auto"
         onChange={handleInput}
         onKeyDown={handleKeyDown}
         placeholder={placeholder ?? "Type a message... (Enter to send, Shift+Enter for newline)"}

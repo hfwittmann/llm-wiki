@@ -47,6 +47,7 @@ function resolveCaptionConfig(
 }
 import { buildLanguageDirective } from "@/lib/output-language"
 import { detectLanguage } from "@/lib/detect-language"
+import { sameScriptFamily } from "@/lib/language-metadata"
 
 // Legacy export kept for backward compatibility with existing diagnostic
 // tests. The live pipeline goes through parseFileBlocks() below, which
@@ -530,7 +531,7 @@ async function autoIngestImpl(
       },
     },
     signal,
-    { temperature: 0.1 },
+    { temperature: 0.1, reasoning: { mode: "off" }, max_tokens: 4096 },
   )
 
   // A silent `return []` here would look like success to the queue
@@ -584,7 +585,7 @@ async function autoIngestImpl(
       },
     },
     signal,
-    { temperature: 0.1 },
+    { temperature: 0.1, reasoning: { mode: "off" }, max_tokens: 8192 },
   )
 
   const generationActivity = useActivityStore.getState().items.find((i) => i.id === activityId)
@@ -753,10 +754,13 @@ function contentMatchesTargetLanguage(content: string, target: string): boolean 
   // accept any Latin family (English may mis-detect as Italian/French for
   // short idiomatic samples — that's fine). Cross-family is the real bug.
   const cjk = new Set(["Chinese", "Traditional Chinese", "Japanese", "Korean"])
+  const distinctNonLatin = new Set(["Arabic", "Persian", "Hindi", "Thai", "Hebrew"])
   const targetIsCjk = cjk.has(target)
   const detectedIsCjk = cjk.has(detected)
   if (targetIsCjk) return detectedIsCjk
-  return !detectedIsCjk && !["Arabic", "Hindi", "Thai", "Hebrew"].includes(detected)
+  if (distinctNonLatin.has(target)) return detected === target
+  if (distinctNonLatin.has(detected)) return sameScriptFamily(target, detected)
+  return !detectedIsCjk
 }
 
 async function writeFileBlocks(
@@ -951,6 +955,7 @@ function parseReviewBlocks(
 export function buildAnalysisPrompt(purpose: string, index: string, sourceContent: string = ""): string {
   return [
     "You are an expert research analyst. Read the source document and produce a structured analysis.",
+    "Do not output chain-of-thought, hidden reasoning, or a thinking transcript. Reason internally and write only the concise final analysis.",
     "",
     languageRule(sourceContent),
     "",
@@ -1004,6 +1009,7 @@ export function buildGenerationPrompt(schema: string, purpose: string, index: st
 
   return [
     "You are a wiki maintainer. Based on the analysis provided, generate wiki files.",
+    "Do not output chain-of-thought, hidden reasoning, or explanatory preamble. Reason internally and output only the requested FILE/REVIEW blocks.",
     "",
     languageRule(sourceContent),
     "",

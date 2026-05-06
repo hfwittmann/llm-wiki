@@ -218,10 +218,6 @@ function App() {
         if (savedMultimodalConfig) {
           useWikiStore.getState().setMultimodalConfig(savedMultimodalConfig)
         }
-        const savedOutputLang = await loadOutputLanguage()
-        if (savedOutputLang) {
-          useWikiStore.getState().setOutputLanguage(savedOutputLang)
-        }
         const savedProxy = await loadProxyConfig()
         if (savedProxy) {
           useWikiStore.getState().setProxyConfig(savedProxy)
@@ -257,6 +253,8 @@ function App() {
     await resetProjectState()
 
     setProject(proj)
+    const projectOutputLang = await loadOutputLanguage(proj.id)
+    useWikiStore.getState().setOutputLanguage(projectOutputLang ?? "auto")
     setSelectedFile(null)
     setActiveView("wiki")
     // Bump data version so any cached graphs/views invalidate
