@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Folder, Play, RefreshCw } from "lucide-react"
 import type { SettingsDraft, DraftSetter } from "../settings-types"
 import { useWikiStore } from "@/stores/wiki-store"
-import { startScheduledImport, stopScheduledImport, scanAndImport } from "@/lib/scheduled-import"
+import { startScheduledImport, stopScheduledImport, scanAndImport, resolveImportPath } from "@/lib/scheduled-import"
 
 interface Props {
   draft: SettingsDraft
@@ -34,11 +34,13 @@ export function ScheduledImportSection({ draft, setDraft }: Props) {
   }
 
   const handleManualScan = useCallback(async () => {
-    if (!project || !draft.scheduledImportPath || isScanning) return
+    if (!project || isScanning) return
+
+    const resolvedPath = resolveImportPath(project.path, draft.scheduledImportPath)
 
     setIsScanning(true)
     try {
-      await scanAndImport(project.path, draft.scheduledImportPath)
+      await scanAndImport(project.path, resolvedPath)
     } catch (err) {
       console.error("[Scheduled Import] Manual scan failed:", err)
     } finally {
@@ -110,7 +112,7 @@ export function ScheduledImportSection({ draft, setDraft }: Props) {
           <Input
             value={draft.scheduledImportPath}
             onChange={(e) => setDraft("scheduledImportPath", e.target.value)}
-            placeholder={project ? `${project.path}/raw` : "/path/to/monitor"}
+            placeholder="raw"
             disabled={!draft.scheduledImportEnabled}
             className="flex-1"
           />

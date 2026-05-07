@@ -79,10 +79,11 @@ function initialDraft(
   scheduledImport: ReturnType<typeof useWikiStore.getState>["scheduledImportConfig"],
   maxHistoryMessages: number,
   uiLanguage: string,
-  projectPath?: string,
 ): SettingsDraft {
-  // Default scheduled import path to project/raw if not set
-  const defaultImportPath = scheduledImport.path || (projectPath ? `${projectPath}/raw` : "")
+  // Resolve the display path: if path is empty, show default "raw"
+  // If path is relative, show it as-is (user sees relative path)
+  // If path is absolute, show it as-is
+  const displayPath = scheduledImport.path || "raw"
 
   return {
     provider: llm.provider,
@@ -115,7 +116,7 @@ function initialDraft(
     proxyUrl: proxy.url,
     proxyBypassLocal: proxy.bypassLocal,
     scheduledImportEnabled: scheduledImport.enabled,
-    scheduledImportPath: defaultImportPath,
+    scheduledImportPath: displayPath,
     scheduledImportInterval: scheduledImport.interval,
     uiLanguage,
   }
@@ -123,7 +124,6 @@ function initialDraft(
 
 export function SettingsView() {
   const { t } = useTranslation()
-  const project = useWikiStore((s) => s.project)
   const llmConfig = useWikiStore((s) => s.llmConfig)
   const setLlmConfig = useWikiStore((s) => s.setLlmConfig)
   const searchApiConfig = useWikiStore((s) => s.searchApiConfig)
@@ -163,7 +163,6 @@ export function SettingsView() {
       scheduledImportConfig,
       maxHistoryMessages,
       i18n.language,
-      project?.path,
     ),
   )
 
@@ -187,7 +186,6 @@ export function SettingsView() {
         scheduledImportConfig,
         maxHistoryMessages,
         prev.uiLanguage,
-        project?.path,
       ),
     )
   }, [
@@ -199,7 +197,6 @@ export function SettingsView() {
     proxyConfig,
     scheduledImportConfig,
     maxHistoryMessages,
-    project,
   ])
 
   const setDraft: DraftSetter = useCallback((key, value) => {

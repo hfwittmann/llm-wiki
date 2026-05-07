@@ -199,19 +199,36 @@ export async function scanAndImport(projectPath: string, importPath: string): Pr
 }
 
 /**
+ * Resolve the absolute path for scheduled import.
+ * If the config path is relative (not absolute), prepend the project path.
+ * If the config path is empty, use the default "raw" directory.
+ */
+export function resolveImportPath(projectPath: string, configPath: string): string {
+  const pp = normalizePath(projectPath)
+  // Default to "raw" if path is empty
+  const path = configPath || "raw"
+  // If path is already absolute, use it as-is
+  if (path.startsWith("/") || path.match(/^[a-zA-Z]:\\/)) {
+    return normalizePath(path)
+  }
+  // Otherwise, treat as relative to project path
+  return `${pp}/${path}`
+}
+
+/**
  * Start the scheduled import timer.
  */
 export function startScheduledImport(projectPath: string, config: ScheduledImportConfig): void {
   stopScheduledImport()
 
-  if (!config.enabled || !config.path || config.interval <= 0) {
+  if (!config.enabled || config.interval <= 0) {
     return
   }
 
   const pp = normalizePath(projectPath)
-  const ip = normalizePath(config.path)
+  const ip = resolveImportPath(pp, config.path)
 
-  console.log(`[Scheduled Import] Starting with interval ${config.interval} minutes`)
+  console.log(`[Scheduled Import] Starting with interval ${config.interval} minutes, path: ${ip}`)
 
   // Run first scan immediately
   scanAndImport(pp, ip).catch((err) => {
