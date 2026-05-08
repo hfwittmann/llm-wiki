@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Folder, Play, RefreshCw } from "lucide-react"
 import type { SettingsDraft, DraftSetter } from "../settings-types"
 import { useWikiStore } from "@/stores/wiki-store"
-import { startScheduledImport, stopScheduledImport, scanAndImport, resolveImportPath } from "@/lib/scheduled-import"
+import { startScheduledImport, stopScheduledImport, scanAndImport } from "@/lib/scheduled-import"
 
 interface Props {
   draft: SettingsDraft
@@ -36,11 +36,9 @@ export function ScheduledImportSection({ draft, setDraft }: Props) {
   const handleManualScan = useCallback(async () => {
     if (!project || isScanning) return
 
-    const resolvedPath = resolveImportPath(project.path, draft.scheduledImportPath)
-
     setIsScanning(true)
     try {
-      await scanAndImport(project.path, resolvedPath)
+      await scanAndImport(project.path, draft.scheduledImportPath)
     } catch (err) {
       console.error("[Scheduled Import] Manual scan failed:", err)
     } finally {
