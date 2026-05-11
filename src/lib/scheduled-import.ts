@@ -49,8 +49,8 @@ function isImportableFile(fileName: string): boolean {
 }
 
 /**
- * Build a map of existing sources: normalizedFilePath -> lastModifiedTime.
- * Uses full normalized path as key to correctly identify files.
+ * Build a map of existing sources: fileName -> { path, modifiedTime }.
+ * Uses base filename as key to match files across different directories.
  */
 async function buildExistingSourcesMap(projectPath: string): Promise<Map<string, { path: string; modified: number }>> {
   const pp = normalizePath(projectPath)
@@ -63,8 +63,8 @@ async function buildExistingSourcesMap(projectPath: string): Promise<Map<string,
     for (const file of files) {
       try {
         const modified = await getFileModifiedTime(file.path)
-        const normalizedPath = normalizePath(file.path)
-        map.set(normalizedPath, { path: file.path, modified })
+        const baseName = getFileName(file.path) || file.name
+        map.set(baseName, { path: file.path, modified })
       } catch {
         // Can't get modified time, skip
       }
@@ -78,8 +78,7 @@ async function buildExistingSourcesMap(projectPath: string): Promise<Map<string,
 
 /**
  * Detect changes between monitored directory and existing sources.
- * Compares by normalized file path to avoid false positives when
- * monitored directory overlaps with raw/sources.
+ * Compares by filename to match files across different directories.
  */
 async function detectChanges(
   monitoredPath: string,
@@ -94,9 +93,8 @@ async function detectChanges(
     for (const file of files) {
       if (!isImportableFile(file.name)) continue
 
-      const normalizedPath = normalizePath(file.path)
       const baseName = getFileName(file.path) || file.name
-      const existing = existingSources.get(normalizedPath)
+      const existing = existingSources.get(baseName)
 
       if (!existing) {
         // New file - not in sources yet
@@ -105,8 +103,14 @@ async function detectChanges(
           sourcePath: file.path,
           fileName: baseName,
         })
-      } else if (normalizedPath !== normalizePath(existing.path)) {
-        // Different file with same name exists in sources - treat as modified
+      } else {
+        // File exists in sources - check if modified
+        const normalizedSource = normalizePath(file.path)
+        const normalizedExisting = normalizePath(existing.path)
+
+        // Skip if it's the exact same file (monitored dir IS raw/sources)
+        if (normalizedSource === normalizedExisting) continue
+
         try {
           const sourceModified = await getFileModifiedTime(file.path)
           if (sourceModified > existing.modified) {
@@ -120,7 +124,6 @@ async function detectChanges(
           // Can't compare, skip
         }
       }
-      // If normalizedPath === normalizePath(existing.path), it's the same file - skip
     }
   } catch (err) {
     console.error("[Scheduled Import] Failed to scan monitored directory:", err)
