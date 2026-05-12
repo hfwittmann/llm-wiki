@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { countReasoningCharsInLine } from "./reasoning-detector"
+import { countReasoningCharsInLine, extractReasoningTextFromLine } from "./reasoning-detector"
 
 describe("countReasoningCharsInLine", () => {
   it("returns 0 for empty / non-stream lines", () => {
@@ -67,5 +67,37 @@ describe("countReasoningCharsInLine", () => {
     const line =
       'data: {"id":"chatcmpl-b5152c89f36f8aa7","object":"chat.completion.chunk","model":"Qwen3.5-122B","choices":[{"index":0,"delta":{"reasoning":"Thinking"},"logprobs":null,"finish_reason":null}]}'
     expect(countReasoningCharsInLine(line)).toBe("Thinking".length)
+  })
+})
+
+describe("extractReasoningTextFromLine", () => {
+  it("extracts OpenAI-compatible reasoning_content chunks", () => {
+    const line =
+      'data: {"choices":[{"index":0,"delta":{"reasoning_content":"thinking"}}]}'
+    expect(extractReasoningTextFromLine(line)).toEqual(["thinking"])
+  })
+
+  it("extracts Qwen-style reasoning chunks", () => {
+    const line =
+      'data: {"choices":[{"index":0,"delta":{"reasoning":"Let me think"}}]}'
+    expect(extractReasoningTextFromLine(line)).toEqual(["Let me think"])
+  })
+
+  it("extracts Anthropic thinking deltas", () => {
+    const line =
+      'data: {"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"reasoning"}}'
+    expect(extractReasoningTextFromLine(line)).toEqual(["reasoning"])
+  })
+
+  it("extracts Gemini thought parts", () => {
+    const line =
+      'data: {"candidates":[{"content":{"parts":[{"thought":true,"text":"hidden"},{"text":"visible"}]}}]}'
+    expect(extractReasoningTextFromLine(line)).toEqual(["hidden"])
+  })
+
+  it("ignores visible content", () => {
+    const line =
+      'data: {"choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}]}'
+    expect(extractReasoningTextFromLine(line)).toEqual([])
   })
 })

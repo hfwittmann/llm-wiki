@@ -1,4 +1,4 @@
-import type { LlmConfig } from "@/stores/wiki-store"
+import type { LlmConfig, ReasoningConfig } from "@/stores/wiki-store"
 
 /**
  * One piece of a multimodal message body. Text + image is the only
@@ -49,6 +49,7 @@ export interface RequestOverrides {
   top_k?: number
   max_tokens?: number
   stop?: string | string[]
+  reasoning?: ReasoningConfig
 }
 
 interface ProviderConfig {
@@ -218,7 +219,85 @@ function buildOpenAiBody(
     role: m.role,
     content: toOpenAiContent(m.content),
   }))
-  return { messages: translated, stream: true, ...(overrides ?? {}) }
+  return { messages: translated, stream: true, ...stripWireAgnosticOverrides(overrides) }
+}
+
+function stripWireAgnosticOverrides(overrides?: RequestOverrides): Omit<RequestOverrides, "reasoning"> {
+  const { reasoning: _reasoning, ...rest } = overrides ?? {}
+  return rest
+}
+
+function effectiveReasoning(config: LlmConfig, overrides?: RequestOverrides): ReasoningConfig {
+  return overrides?.reasoning ?? config.reasoning ?? { mode: "auto" }
+}
+
+function isDeepSeekEndpoint(config: LlmConfig): boolean {
+  return /deepseek/i.test(config.model) || /deepseek/i.test(config.customEndpoint)
+}
+
+function isQwenThinkingModel(model: string): boolean {
+  return /qwen[-_]?3/i.test(model)
+}
+
+function isOpenAiStrictCompletionModel(config: LlmConfig): boolean {
+  if (config.provider !== "openai") return false
+  const model = config.model.trim().toLowerCase()
+  return /^gpt-5(?:[.\-_]|$)/.test(model) || /^o\d+(?:[.\-_]|$)/.test(model)
+}
+
+function adaptOpenAiStrictCompletionBody(config: LlmConfig, body: Record<string, unknown>): void {
+  if (!isOpenAiStrictCompletionModel(config)) return
+
+  if (typeof body.max_tokens === "number") {
+    body.max_completion_tokens = body.max_tokens
+    delete body.max_tokens
+  }
+
+  // GPT-5 / o-series Chat Completions deployments reject non-default
+  // sampling knobs. Structured ingest passes temperature=0.1, so strip
+  // these only on the strict OpenAI path; custom/OpenRouter-compatible
+  // routes keep their existing behavior.
+  delete body.temperature
+  delete body.top_p
+  delete body.top_k
+}
+
+function buildOpenAiCompatibleBody(
+  config: LlmConfig,
+  messages: ChatMessage[],
+  overrides?: RequestOverrides,
+): Record<string, unknown> {
+  const reasoning = effectiveReasoning(config, overrides)
+  const body: Record<string, unknown> = buildOpenAiBody(messages, stripWireAgnosticOverrides(overrides))
+  adaptOpenAiStrictCompletionBody(config, body)
+
+  if (isDeepSeekEndpoint(config)) {
+    // DeepSeek V4 thinking mode. `thinking.type=disabled` is the most
+    // important path for ingestion/rewrite tasks: it prevents the model
+    // from spending the whole response on `reasoning_content` with no
+    // final `content`.
+    if (reasoning.mode === "off") {
+      body.thinking = { type: "disabled" }
+    } else if (reasoning.mode !== "auto") {
+      body.thinking = { type: "enabled" }
+      if (reasoning.mode === "high" || reasoning.mode === "max") {
+        body.reasoning_effort = reasoning.mode
+      }
+    }
+    return body
+  }
+
+  if (reasoning.mode === "off" && isQwenThinkingModel(config.model)) {
+    body.chat_template_kwargs = { enable_thinking: false }
+  }
+
+  if (config.provider === "openai" && reasoning.mode !== "auto" && reasoning.mode !== "off") {
+    if (reasoning.mode === "low" || reasoning.mode === "medium" || reasoning.mode === "high") {
+      body.reasoning_effort = reasoning.mode
+    }
+  }
+
+  return body
 }
 
 /**
@@ -292,6 +371,34 @@ function buildAnthropicBody(
       ? { stop_sequences: Array.isArray(overrides.stop) ? overrides.stop : [overrides.stop] }
       : {}),
   }
+}
+
+function buildAnthropicBodyWithReasoning(
+  config: LlmConfig,
+  messages: ChatMessage[],
+  overrides?: RequestOverrides,
+): Record<string, unknown> {
+  const body = buildAnthropicBody(messages, overrides)
+  const reasoning = effectiveReasoning(config, overrides)
+  if (reasoning.mode === "auto" || reasoning.mode === "off") return body
+
+  const budget =
+    reasoning.mode === "custom" && reasoning.budgetTokens !== undefined
+      ? reasoning.budgetTokens
+      : reasoning.mode === "low"
+        ? 1024
+        : reasoning.mode === "medium"
+          ? 4096
+        : 8192
+  const budgetTokens = Math.max(1024, budget)
+  if ((body.max_tokens as number) <= budgetTokens) {
+    body.max_tokens = budgetTokens + 1
+  }
+  body.thinking = { type: "enabled", budget_tokens: budgetTokens }
+  delete body.temperature
+  delete body.top_p
+  delete body.top_k
+  return body
 }
 
 /**
@@ -417,6 +524,19 @@ function buildGoogleBody(
   if (overrides?.stop !== undefined) {
     generationConfig.stopSequences = Array.isArray(overrides.stop) ? overrides.stop : [overrides.stop]
   }
+  if (overrides?.reasoning?.mode === "off") {
+    generationConfig.thinkingConfig = { thinkingBudget: 0 }
+  } else if (overrides?.reasoning && overrides.reasoning.mode !== "auto") {
+    const budget =
+      overrides.reasoning.mode === "custom" && overrides.reasoning.budgetTokens !== undefined
+        ? overrides.reasoning.budgetTokens
+        : overrides.reasoning.mode === "low"
+          ? 1024
+          : overrides.reasoning.mode === "medium"
+            ? 4096
+            : 8192
+    generationConfig.thinkingConfig = { thinkingBudget: budget }
+  }
 
   return {
     contents,
@@ -437,7 +557,7 @@ export function getProviderConfig(config: LlmConfig): ProviderConfig {
           Authorization: `Bearer ${apiKey}`,
         },
         buildBody: (messages, overrides) => ({
-          ...buildOpenAiBody(messages, overrides),
+          ...buildOpenAiCompatibleBody(config, messages, overrides),
           model,
         }),
         parseStream: parseOpenAiLine,
@@ -449,7 +569,7 @@ export function getProviderConfig(config: LlmConfig): ProviderConfig {
         url,
         headers: buildAnthropicHeaders(apiKey, url),
         buildBody: (messages, overrides) => ({
-          ...buildAnthropicBody(messages, overrides),
+          ...buildAnthropicBodyWithReasoning(config, messages, overrides),
           model,
         }),
         parseStream: parseAnthropicLine,
@@ -468,7 +588,10 @@ export function getProviderConfig(config: LlmConfig): ProviderConfig {
           "Content-Type": JSON_CONTENT_TYPE,
           "x-goog-api-key": apiKey,
         },
-        buildBody: buildGoogleBody,
+        buildBody: (messages, overrides) => buildGoogleBody(messages, {
+          ...(overrides ?? {}),
+          reasoning: effectiveReasoning(config, overrides),
+        }),
         parseStream: parseGoogleLine,
       }
     }
@@ -490,21 +613,10 @@ export function getProviderConfig(config: LlmConfig): ProviderConfig {
           "Content-Type": JSON_CONTENT_TYPE,
           ...localLlmOriginHeader(),
         },
-        buildBody: (messages, overrides) => {
-          const body: Record<string, unknown> = {
-            ...buildOpenAiBody(messages, overrides),
-            model,
-          }
-          // Qwen3 thinking mode disable. Recognized by llama.cpp server
-          // launched with `--jinja` (reads chat_template_kwargs from the
-          // OpenAI body and forwards to the Jinja chat template). Real
-          // Ollama silently ignores unknown fields, so this is safe.
-          // Requires llama-server --jinja; without it, thinking stays on.
-          if (/qwen[-_]?3/i.test(model)) {
-            body.chat_template_kwargs = { enable_thinking: false }
-          }
-          return body
-        },
+        buildBody: (messages, overrides) => ({
+          ...buildOpenAiCompatibleBody(config, messages, overrides),
+          model,
+        }),
         parseStream: parseOpenAiLine,
       }
     }
@@ -520,7 +632,7 @@ export function getProviderConfig(config: LlmConfig): ProviderConfig {
         url,
         headers: buildAnthropicHeaders(apiKey, url),
         buildBody: (messages, overrides) => ({
-          ...buildAnthropicBody(messages, overrides),
+          ...buildAnthropicBodyWithReasoning(config, messages, overrides),
           model,
         }),
         parseStream: parseAnthropicLine,
@@ -548,7 +660,7 @@ export function getProviderConfig(config: LlmConfig): ProviderConfig {
           url,
           headers: buildAnthropicHeaders(apiKey, url),
           buildBody: (messages, overrides) => ({
-            ...buildAnthropicBody(messages, overrides),
+            ...buildAnthropicBodyWithReasoning(config, messages, overrides),
             model,
           }),
           parseStream: parseAnthropicLine,
@@ -573,7 +685,7 @@ export function getProviderConfig(config: LlmConfig): ProviderConfig {
           ...localLlmOriginHeader(),
         },
         buildBody: (messages, overrides) => ({
-          ...buildOpenAiBody(messages, overrides),
+          ...buildOpenAiCompatibleBody(config, messages, overrides),
           model,
         }),
         parseStream: parseOpenAiLine,

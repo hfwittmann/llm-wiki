@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { Children, isValidElement, useEffect, useRef, useState, type ReactNode } from "react"
 import { X, ZoomIn } from "lucide-react"
 
 interface MermaidDiagramProps {
@@ -166,4 +166,12 @@ export function MermaidDiagram({ code }: MermaidDiagramProps) {
       )}
     </>
   )
+}
+
+export function unwrapMermaidPre(children: ReactNode): ReactNode | null {
+  const childNodes = Children.toArray(children)
+  if (childNodes.length !== 1) return null
+  const child = childNodes[0]
+  if (!isValidElement(child)) return null
+  return child.type === MermaidDiagram ? child : null
 }

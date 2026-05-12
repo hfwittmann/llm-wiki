@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button"
 import { useWikiStore } from "@/stores/wiki-store"
 import { useChatStore } from "@/stores/chat-store"
 import { useUpdateStore, hasAvailableUpdate } from "@/stores/update-store"
-import { saveLanguage } from "@/lib/project-store"
+import { loadProjectFileSyncEnabled, saveLanguage } from "@/lib/project-store"
 import type { SettingsDraft, DraftSetter } from "./settings-types"
 import { LlmProviderSection } from "./sections/llm-provider-section"
 import { EmbeddingSection } from "./sections/embedding-section"
@@ -71,7 +71,6 @@ const CATEGORIES: Category[] = [
 
 function initialDraft(
   llm: ReturnType<typeof useWikiStore.getState>["llmConfig"],
-  search: ReturnType<typeof useWikiStore.getState>["searchApiConfig"],
   embed: ReturnType<typeof useWikiStore.getState>["embeddingConfig"],
   multimodal: ReturnType<typeof useWikiStore.getState>["multimodalConfig"],
   outputLanguage: ReturnType<typeof useWikiStore.getState>["outputLanguage"],
@@ -80,6 +79,7 @@ function initialDraft(
   maxHistoryMessages: number,
   uiLanguage: string,
   projectPath?: string,
+  projectFileSyncEnabled: boolean,
 ): SettingsDraft {
   // Show absolute path: if stored path is empty, show default using project path
   // If stored path is relative (legacy), prepend project path
@@ -100,6 +100,7 @@ function initialDraft(
     customEndpoint: llm.customEndpoint,
     maxContextSize: llm.maxContextSize ?? 204800,
     apiMode: llm.apiMode,
+    reasoning: llm.reasoning,
     embeddingEnabled: embed.enabled,
     embeddingEndpoint: embed.endpoint,
     embeddingApiKey: embed.apiKey,
@@ -115,8 +116,6 @@ function initialDraft(
     multimodalCustomEndpoint: multimodal.customEndpoint,
     multimodalApiMode: multimodal.apiMode,
     multimodalConcurrency: multimodal.concurrency,
-    searchProvider: search.provider,
-    searchApiKey: search.apiKey,
     outputLanguage,
     maxHistoryMessages,
     proxyEnabled: proxy.enabled,
@@ -126,6 +125,7 @@ function initialDraft(
     scheduledImportPath: displayPath,
     scheduledImportInterval: scheduledImport.interval,
     uiLanguage,
+    projectFileSyncEnabled,
   }
 }
 
@@ -134,14 +134,13 @@ export function SettingsView() {
   const project = useWikiStore((s) => s.project)
   const llmConfig = useWikiStore((s) => s.llmConfig)
   const setLlmConfig = useWikiStore((s) => s.setLlmConfig)
-  const searchApiConfig = useWikiStore((s) => s.searchApiConfig)
-  const setSearchApiConfig = useWikiStore((s) => s.setSearchApiConfig)
   const embeddingConfig = useWikiStore((s) => s.embeddingConfig)
   const setEmbeddingConfig = useWikiStore((s) => s.setEmbeddingConfig)
   const multimodalConfig = useWikiStore((s) => s.multimodalConfig)
   const setMultimodalConfig = useWikiStore((s) => s.setMultimodalConfig)
   const outputLanguage = useWikiStore((s) => s.outputLanguage)
   const setOutputLanguage = useWikiStore((s) => s.setOutputLanguage)
+  const project = useWikiStore((s) => s.project)
   const proxyConfig = useWikiStore((s) => s.proxyConfig)
   const setProxyConfig = useWikiStore((s) => s.setProxyConfig)
   const scheduledImportConfig = useWikiStore((s) => s.scheduledImportConfig)
@@ -160,10 +159,10 @@ export function SettingsView() {
 
   const [active, setActive] = useState<CategoryId>("llm")
   const [saved, setSaved] = useState(false)
+  const [projectFileSyncEnabled, setProjectFileSyncEnabled] = useState(true)
   const [draft, setDraftState] = useState<SettingsDraft>(() =>
     initialDraft(
       llmConfig,
-      searchApiConfig,
       embeddingConfig,
       multimodalConfig,
       outputLanguage,
@@ -172,8 +171,25 @@ export function SettingsView() {
       maxHistoryMessages,
       i18n.language,
       project?.path,
+      projectFileSyncEnabled,
     ),
   )
+
+  useEffect(() => {
+    let cancelled = false
+    loadProjectFileSyncEnabled(project?.id).then((enabled) => {
+      if (cancelled) return
+      setProjectFileSyncEnabled(enabled)
+      setDraftState((prev) => ({ ...prev, projectFileSyncEnabled: enabled }))
+    }).catch(() => {
+      if (cancelled) return
+      setProjectFileSyncEnabled(true)
+      setDraftState((prev) => ({ ...prev, projectFileSyncEnabled: true }))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [project?.id])
 
   // Resync draft from store if it changes out-of-band (e.g. project switch).
   // IMPORTANT: keep the current draft.uiLanguage instead of re-reading
@@ -187,7 +203,6 @@ export function SettingsView() {
     setDraftState((prev) =>
       initialDraft(
         llmConfig,
-        searchApiConfig,
         embeddingConfig,
         multimodalConfig,
         outputLanguage,
@@ -196,11 +211,11 @@ export function SettingsView() {
         maxHistoryMessages,
         prev.uiLanguage,
         project?.path,
+        projectFileSyncEnabled,
       ),
     )
   }, [
     llmConfig,
-    searchApiConfig,
     embeddingConfig,
     multimodalConfig,
     outputLanguage,
@@ -208,6 +223,7 @@ export function SettingsView() {
     scheduledImportConfig,
     maxHistoryMessages,
     project,
+    projectFileSyncEnabled,
   ])
 
   const setDraft: DraftSetter = useCallback((key, value) => {
@@ -217,12 +233,12 @@ export function SettingsView() {
   const handleSave = useCallback(async () => {
     const {
       saveLlmConfig,
-      saveSearchApiConfig,
       saveEmbeddingConfig,
       saveMultimodalConfig,
       saveOutputLanguage,
       saveProxyConfig,
       saveScheduledImportConfig,
+      saveProjectFileSyncEnabled,
     } = await import("@/lib/project-store")
 
     const newLlm = {
@@ -233,8 +249,8 @@ export function SettingsView() {
       customEndpoint: draft.customEndpoint,
       maxContextSize: draft.maxContextSize,
       apiMode: draft.provider === "custom" ? draft.apiMode : undefined,
+      reasoning: draft.reasoning,
     }
-    const newSearch = { provider: draft.searchProvider, apiKey: draft.searchApiKey }
     const newEmbed = {
       enabled: draft.embeddingEnabled,
       endpoint: draft.embeddingEndpoint,
@@ -269,16 +285,26 @@ export function SettingsView() {
 
     setLlmConfig(newLlm)
     await saveLlmConfig(newLlm)
-    setSearchApiConfig(newSearch)
-    await saveSearchApiConfig(newSearch)
     setEmbeddingConfig(newEmbed)
     await saveEmbeddingConfig(newEmbed)
     setMultimodalConfig(newMultimodal)
     await saveMultimodalConfig(newMultimodal)
     setOutputLanguage(draft.outputLanguage as typeof outputLanguage)
-    await saveOutputLanguage(draft.outputLanguage as typeof outputLanguage)
+    await saveOutputLanguage(draft.outputLanguage as typeof outputLanguage, project?.id)
     setProxyConfig(newProxy)
     await saveProxyConfig(newProxy)
+    await saveProjectFileSyncEnabled(draft.projectFileSyncEnabled, project?.id)
+    setProjectFileSyncEnabled(draft.projectFileSyncEnabled)
+    if (project) {
+      const { startProjectFileSync, stopProjectFileSync } = await import("@/lib/project-file-sync")
+      if (draft.projectFileSyncEnabled) {
+        await startProjectFileSync(project).catch((err) =>
+          console.error("Failed to start project file sync:", err)
+        )
+      } else {
+        await stopProjectFileSync()
+      }
+    }
     // Apply the proxy env vars LIVE so the next outbound request
     // picks them up — no app restart needed. tauri-plugin-http
     // builds a fresh reqwest client per fetch and reqwest reads
@@ -313,7 +339,6 @@ export function SettingsView() {
     draft,
     project,
     setLlmConfig,
-    setSearchApiConfig,
     setEmbeddingConfig,
     setOutputLanguage,
     setProxyConfig,
@@ -321,6 +346,7 @@ export function SettingsView() {
     scheduledImportConfig,
     setMaxHistoryMessages,
     outputLanguage,
+    project,
   ])
 
   const body = useMemo(() => {
@@ -335,7 +361,7 @@ export function SettingsView() {
       case "multimodal":
         return <MultimodalSection draft={draft} setDraft={setDraft} />
       case "web-search":
-        return <WebSearchSection draft={draft} setDraft={setDraft} />
+        return <WebSearchSection />
       case "network":
         return <NetworkSection draft={draft} setDraft={setDraft} />
       case "scheduled-import":
@@ -345,7 +371,7 @@ export function SettingsView() {
       case "interface":
         return <InterfaceSection draft={draft} setDraft={setDraft} />
       case "maintenance":
-        return <MaintenanceSection />
+        return <MaintenanceSection draft={draft} setDraft={setDraft} />
       case "changelog":
         return <ChangelogSection />
       case "about":
@@ -412,8 +438,8 @@ export function SettingsView() {
 
         {/* Global Save bar hidden for sections that persist inline:
             - "llm" saves per-row on every edit (independent per-preset state)
-            - "about" / "maintenance" have no draft-bound fields */}
-        {active !== "about" && active !== "llm" && active !== "maintenance" && (
+            - "about" has no draft-bound fields */}
+        {active !== "about" && active !== "llm" && (
           <div className="shrink-0 border-t bg-background/80 backdrop-blur px-8 py-3">
             <div className="mx-auto flex max-w-2xl items-center justify-between gap-4">
               <p className="text-xs text-muted-foreground">

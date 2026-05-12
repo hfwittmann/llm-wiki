@@ -75,7 +75,7 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreated }: C
       // wouldn't survive past the dialog closing.
       const lang = language as OutputLanguage
       setOutputLanguage(lang)
-      await saveOutputLanguage(lang)
+      await saveOutputLanguage(lang, project.id)
 
       onCreated(project)
       onOpenChange(false)

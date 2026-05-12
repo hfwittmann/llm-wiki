@@ -47,6 +47,7 @@ function resolveCaptionConfig(
 }
 import { buildLanguageDirective } from "@/lib/output-language"
 import { detectLanguage } from "@/lib/detect-language"
+import { sameScriptFamily } from "@/lib/language-metadata"
 
 // Legacy export kept for backward compatibility with existing diagnostic
 // tests. The live pipeline goes through parseFileBlocks() below, which
@@ -95,6 +96,8 @@ const CLOSER_LINE = /^---\s*END\s+FILE\s*---\s*$/i
  *   - paths not starting with `wiki/`
  *   - absolute paths (`/etc/passwd`, `C:/Windows/...`)
  *   - any `..` segment
+ *   - Windows-invalid filename characters / reserved device names
+ *   - segments ending in space or `.`
  *   - NUL or control characters
  *   - empty / whitespace-only paths
  *
@@ -110,9 +113,30 @@ export function isSafeIngestPath(p: string): boolean {
   // Normalize backslashes so a Windows-style payload doesn't sneak past.
   const normalized = p.replace(/\\/g, "/")
   // No `..` segments, regardless of position.
-  if (normalized.split("/").some((seg) => seg === "..")) return false
+  const segments = normalized.split("/")
+  if (segments.some((seg) => seg === "..")) return false
+  if (segments.some((seg) => !isWindowsSafePathSegment(seg))) return false
   // Must live under wiki/ — the only tree the ingest pipeline writes to.
   if (!normalized.startsWith("wiki/")) return false
+  return true
+}
+
+function isWindowsSafePathSegment(segment: string): boolean {
+  if (segment.length === 0) return false
+  if (/[<>:"|?*]/.test(segment)) return false
+  if (/[ .]$/.test(segment)) return false
+  const stem = segment.split(".")[0]?.toUpperCase()
+  if (!stem) return false
+  if (
+    stem === "CON" ||
+    stem === "PRN" ||
+    stem === "AUX" ||
+    stem === "NUL" ||
+    /^COM[1-9]$/.test(stem) ||
+    /^LPT[1-9]$/.test(stem)
+  ) {
+    return false
+  }
   return true
 }
 // Fence delimiters per CommonMark (triple+ backticks or tildes). Leading
@@ -228,7 +252,7 @@ export function parseFileBlocks(text: string): ParseFileBlocksResult {
     if (!isSafeIngestPath(path)) {
       // Path-traversal guard. Drops blocks whose path tries to escape
       // wiki/ — see isSafeIngestPath for the threat model.
-      const msg = `FILE block with unsafe path "${path}" rejected (must be under wiki/, no .., no absolute paths).`
+      const msg = `FILE block with unsafe path "${path}" rejected (must be under wiki/, no .., no absolute paths, and Windows-safe file names).`
       console.warn(`[ingest] ${msg}`)
       warnings.push(msg)
       continue
@@ -530,7 +554,7 @@ async function autoIngestImpl(
       },
     },
     signal,
-    { temperature: 0.1 },
+    { temperature: 0.1, reasoning: { mode: "off" }, max_tokens: 4096 },
   )
 
   // A silent `return []` here would look like success to the queue
@@ -584,7 +608,7 @@ async function autoIngestImpl(
       },
     },
     signal,
-    { temperature: 0.1 },
+    { temperature: 0.1, reasoning: { mode: "off" }, max_tokens: 8192 },
   )
 
   const generationActivity = useActivityStore.getState().items.find((i) => i.id === activityId)
@@ -753,10 +777,13 @@ function contentMatchesTargetLanguage(content: string, target: string): boolean 
   // accept any Latin family (English may mis-detect as Italian/French for
   // short idiomatic samples — that's fine). Cross-family is the real bug.
   const cjk = new Set(["Chinese", "Traditional Chinese", "Japanese", "Korean"])
+  const distinctNonLatin = new Set(["Arabic", "Persian", "Hindi", "Thai", "Hebrew"])
   const targetIsCjk = cjk.has(target)
   const detectedIsCjk = cjk.has(detected)
   if (targetIsCjk) return detectedIsCjk
-  return !detectedIsCjk && !["Arabic", "Hindi", "Thai", "Hebrew"].includes(detected)
+  if (distinctNonLatin.has(target)) return detected === target
+  if (distinctNonLatin.has(detected)) return sameScriptFamily(target, detected)
+  return !detectedIsCjk
 }
 
 async function writeFileBlocks(
@@ -951,6 +978,7 @@ function parseReviewBlocks(
 export function buildAnalysisPrompt(purpose: string, index: string, sourceContent: string = ""): string {
   return [
     "You are an expert research analyst. Read the source document and produce a structured analysis.",
+    "Do not output chain-of-thought, hidden reasoning, or a thinking transcript. Reason internally and write only the concise final analysis.",
     "",
     languageRule(sourceContent),
     "",
@@ -1004,6 +1032,7 @@ export function buildGenerationPrompt(schema: string, purpose: string, index: st
 
   return [
     "You are a wiki maintainer. Based on the analysis provided, generate wiki files.",
+    "Do not output chain-of-thought, hidden reasoning, or explanatory preamble. Reason internally and output only the requested FILE/REVIEW blocks.",
     "",
     languageRule(sourceContent),
     "",

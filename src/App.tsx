@@ -5,7 +5,7 @@ import { useWikiStore } from "@/stores/wiki-store"
 import { useReviewStore } from "@/stores/review-store"
 import { useChatStore } from "@/stores/chat-store"
 import { listDirectory, openProject } from "@/commands/fs"
-import { getLastProject, getRecentProjects, saveLastProject, loadLlmConfig, loadLanguage, loadSearchApiConfig, loadEmbeddingConfig, loadMultimodalConfig, loadOutputLanguage, loadProviderConfigs, loadActivePresetId, loadProxyConfig, loadScheduledImportConfig, saveScheduledImportConfig } from "@/lib/project-store"
+import { getLastProject, getRecentProjects, saveLastProject, loadLlmConfig, loadLanguage, loadSearchApiConfig, loadEmbeddingConfig, loadMultimodalConfig, loadOutputLanguage, loadProviderConfigs, loadActivePresetId, loadProxyConfig, loadScheduledImportConfig, saveScheduledImportConfig, loadProjectFileSyncEnabled } from "@/lib/project-store"
 import { loadReviewItems, loadChatHistory } from "@/lib/persist"
 import { setupAutoSave } from "@/lib/auto-save"
 import { startClipWatcher } from "@/lib/clip-watcher"
@@ -218,10 +218,6 @@ function App() {
         if (savedMultimodalConfig) {
           useWikiStore.getState().setMultimodalConfig(savedMultimodalConfig)
         }
-        const savedOutputLang = await loadOutputLanguage()
-        if (savedOutputLang) {
-          useWikiStore.getState().setOutputLanguage(savedOutputLang)
-        }
         const savedProxy = await loadProxyConfig()
         if (savedProxy) {
           useWikiStore.getState().setProxyConfig(savedProxy)
@@ -257,6 +253,8 @@ function App() {
     await resetProjectState()
 
     setProject(proj)
+    const projectOutputLang = await loadOutputLanguage(proj.id)
+    useWikiStore.getState().setOutputLanguage(projectOutputLang ?? "auto")
     setSelectedFile(null)
     setActiveView("wiki")
     // Bump data version so any cached graphs/views invalidate
@@ -266,11 +264,14 @@ function App() {
     // Restore ingest queue (resume interrupted tasks). Keyed by the
     // project's stable UUID so the queue still finds the right project
     // even if the filesystem path changed since the task was enqueued.
-    import("@/lib/ingest-queue").then(({ restoreQueue }) => {
-      restoreQueue(proj.id, proj.path).catch((err) =>
-        console.error("Failed to restore ingest queue:", err)
-      )
-    })
+    // Await this before starting file sync: watcher events for raw/sources
+    // may enqueue ingest tasks and require an active project queue.
+    try {
+      const { restoreQueue } = await import("@/lib/ingest-queue")
+      await restoreQueue(proj.id, proj.path)
+    } catch (err) {
+      console.error("Failed to restore ingest queue:", err)
+    }
     // Same handshake for the dedup-merge queue.
     import("@/lib/dedup-queue").then(({ restoreQueue }) => {
       restoreQueue(proj.id, proj.path).catch((err) =>
@@ -312,6 +313,17 @@ function App() {
       )
     }
 
+    // Start project file sync if enabled
+    import("@/lib/project-file-sync").then(async ({ startProjectFileSync, stopProjectFileSync }) => {
+      const enabled = await loadProjectFileSyncEnabled(proj.id)
+      if (enabled) {
+        startProjectFileSync(proj).catch((err) =>
+          console.error("Failed to start project file sync:", err)
+        )
+      } else {
+        stopProjectFileSync().catch(() => {})
+      }
+    }).catch((err) => console.error("Failed to configure project file sync:", err))
     // Notify local clip server of the current project + all recent projects
     fetch("http://127.0.0.1:19827/project", {
       method: "POST",

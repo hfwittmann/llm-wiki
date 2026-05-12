@@ -26,6 +26,52 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.4.9",
+    date: "2026-05-11",
+    highlights: {
+      en: ["Fixed Windows compatibility issues around file paths, source sync, and file deletion."],
+      zh: ["修复 Windows 下文件路径、原始资料同步和文件删除相关的兼容性问题。"],
+    },
+  },
+  {
+    version: "0.4.8",
+    date: "2026-05-11",
+    highlights: {
+      en: [
+        "Project file sync is more complete: external changes in raw sources can be detected, queued persistently, retried, and routed through the same source add/delete lifecycle as in-app actions.",
+        "Source cleanup is more reliable when raw files are deleted outside the app: related wiki pages, index entries, wikilinks, and `related:` references are cleaned consistently, including path-style `.md` links.",
+        "Web search adds SearXNG as a provider, with per-provider configuration and selectable SearXNG search categories.",
+        "Large raw-source folders are easier to browse: the Sources page now renders the file tree progressively while scrolling.",
+        "OpenAI GPT-5 / o-series ingest compatibility is improved by using the supported completion-token parameter shape and avoiding unsupported sampling knobs.",
+      ],
+      zh: [
+        "项目文件同步更完整：外部修改 raw sources 后可被检测、持久化排队、重试，并统一走应用内相同的 source 添加/删除生命周期。",
+        "外部删除原始文件后的清理更可靠：相关 wiki 页面、index 条目、正文 wikilink 和 `related:` 引用会一致清理，也覆盖带路径和 `.md` 后缀的引用。",
+        "网页搜索新增 SearXNG Provider，支持独立配置并选择 SearXNG 搜索分类。",
+        "原始资料目录较大时更易浏览：Sources 页面现在会随滚动渐进渲染文件树。",
+        "改进 OpenAI GPT-5 / o-series 的 ingest 兼容性：使用支持的 completion token 参数，并避免发送不支持的采样参数。",
+      ],
+    },
+  },
+  {
+    version: "0.4.7",
+    date: "2026-05-06",
+    highlights: {
+      en: [
+        "Web search now supports multiple providers: Tavily and SerpApi can be configured separately, with independent API keys and SerpApi search-engine selection.",
+        "Reasoning-model support is improved across providers: thinking controls are available in LLM settings, structured ingest avoids reasoning-only failures, and chat can show model thinking when an endpoint streams it.",
+        "Knowledge graph exploration is cleaner with filters, structural-node hiding, right-click node hide, and reset controls.",
+        "Persian (Farsi) is now available as an output language, with better auto-detection from Arabic, RTL rendering, and per-project target-language preferences.",
+      ],
+      zh: [
+        "网页搜索支持多 Provider：Tavily 和 SerpApi 可分别配置，API Key 独立保存，并支持选择 SerpApi 搜索引擎。",
+        "推理型模型支持增强：LLM 设置里新增 thinking / reasoning 控制，结构化导入会避免只输出思考不输出正文的问题，聊天中也能显示模型流式返回的思考过程。",
+        "关系图新增过滤能力：可隐藏结构性节点、按节点/连接过滤、右键隐藏单个节点，并可一键重置。",
+        "新增 Persian (Farsi) 输出语言支持：自动检测可更好地区分 Persian 和 Arabic，内容按 RTL 显示，Target Language 也改为按项目独立保存。",
+      ],
+    },
+  },
+  {
     version: "0.4.6",
     date: "2026-05-01",
     highlights: {

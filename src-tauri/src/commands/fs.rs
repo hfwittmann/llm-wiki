@@ -1,9 +1,12 @@
 use std::fs;
 use std::io::Read as IoRead;
 use std::path::Path;
+use std::thread;
+use std::time::Duration;
 
 use calamine::{Reader, open_workbook_auto, Data};
 
+use crate::commands::file_sync;
 use crate::panic_guard::run_guarded;
 use crate::types::wiki::FileNode;
 
@@ -133,6 +136,7 @@ fn write_cache(original: &Path, text: &str) -> Result<(), String> {
     if let Some(parent) = cache_path.parent() {
         fs::create_dir_all(parent).ok();
     }
+    crate::commands::file_sync::mark_app_write_path(&cache_path);
     fs::write(&cache_path, text)
         .map_err(|e| format!("Failed to write cache: {}", e))
 }
@@ -899,8 +903,11 @@ pub async fn write_file(path: String, contents: String) -> Result<(), String> {
                 fs::create_dir_all(parent)
                     .map_err(|e| format!("Failed to create parent dirs for '{}': {}", path, e))?;
             }
+            file_sync::mark_app_write_path(p);
             fs::write(&path, contents)
-                .map_err(|e| format!("Failed to write file '{}': {}", path, e))
+                .map_err(|e| format!("Failed to write file '{}': {}", path, e))?;
+            file_sync::mark_app_write_path(p);
+            Ok(())
         })
     })
     .await
@@ -1002,8 +1009,10 @@ pub async fn copy_file(source: String, destination: String) -> Result<(), String
                 fs::create_dir_all(parent)
                     .map_err(|e| format!("Failed to create parent dirs: {}", e))?;
             }
+            file_sync::mark_app_write_path(dest);
             fs::copy(&source, &destination)
                 .map_err(|e| format!("Failed to copy '{}' to '{}': {}", source, destination, e))?;
+            file_sync::mark_app_write_path(dest);
             Ok(())
         })
     })
@@ -1019,6 +1028,7 @@ pub async fn copy_directory(source: String, destination: String) -> Result<Vec<S
         run_guarded("copy_directory", || {
             let src = Path::new(&source);
             let dest = Path::new(&destination);
+            file_sync::mark_app_write_path(dest);
 
             if !src.is_dir() {
                 return Err(format!("'{}' is not a directory", source));
@@ -1053,6 +1063,7 @@ pub async fn copy_directory(source: String, destination: String) -> Result<Vec<S
                         fs::copy(&path, &dest_path).map_err(|e| {
                             format!("Failed to copy '{}': {}", path.display(), e)
                         })?;
+                        file_sync::mark_app_write_path(&dest_path);
                         files.push(dest_path.to_string_lossy().replace('\\', "/"));
                     }
                 }
@@ -1072,17 +1083,53 @@ pub async fn delete_file(path: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         run_guarded("delete_file", || {
             let p = Path::new(&path);
+            file_sync::mark_app_write_path(p);
             if p.is_dir() {
-                fs::remove_dir_all(&path)
-                    .map_err(|e| format!("Failed to delete directory '{}': {}", path, e))
+                remove_path_with_retry(&path, true)
+                    .map_err(|e| format!("Failed to delete directory '{}': {}", path, e))?;
             } else {
-                fs::remove_file(&path)
-                    .map_err(|e| format!("Failed to delete file '{}': {}", path, e))
+                remove_path_with_retry(&path, false)
+                    .map_err(|e| format!("Failed to delete file '{}': {}", path, e))?;
             }
+            file_sync::mark_app_write_path(p);
+            Ok(())
         })
     })
     .await
     .map_err(|e| format!("delete_file blocking task join error: {e}"))?
+}
+
+fn remove_path_with_retry(path: &str, is_dir: bool) -> Result<(), std::io::Error> {
+    let mut last_err: Option<std::io::Error> = None;
+    for attempt in 0..4 {
+        let result = if is_dir {
+            fs::remove_dir_all(path)
+        } else {
+            fs::remove_file(path)
+        };
+        match result {
+            Ok(()) => return Ok(()),
+            Err(err) if attempt < 3 && is_windows_transient_delete_error(&err) => {
+                last_err = Some(err);
+                thread::sleep(Duration::from_millis(250 * (1_u64 << attempt)));
+            }
+            Err(err) => return Err(err),
+        }
+    }
+    Err(last_err.unwrap_or_else(|| std::io::Error::other("delete failed")))
+}
+
+fn is_windows_transient_delete_error(err: &std::io::Error) -> bool {
+    #[cfg(windows)]
+    {
+        matches!(err.raw_os_error(), Some(32 | 33))
+            || err.kind() == std::io::ErrorKind::PermissionDenied
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = err;
+        false
+    }
 }
 
 /// Find wiki pages that reference a given source file name.
@@ -1325,12 +1372,15 @@ pub async fn get_file_modified_time(path: String) -> Result<u64, String> {
 /// Compute MD5 hash of a file. Returns the hex-encoded hash string.
 #[tauri::command]
 pub async fn get_file_md5(path: String) -> Result<String, String> {
+    use md5::{Digest, Md5};
     tauri::async_runtime::spawn_blocking(move || {
         run_guarded("get_file_md5", || {
             let bytes = fs::read(&path)
                 .map_err(|e| format!("Failed to read file '{}': {}", path, e))?;
-            let digest = md5::compute(&bytes);
-            Ok(format!("{:x}", digest))
+            let mut hasher = Md5::new();
+            hasher.update(&bytes);
+            let result = hasher.finalize();
+            Ok(format!("{:x}", result))
         })
     })
     .await

@@ -21,7 +21,9 @@ import { makeQueryFileName } from "@/lib/wiki-filename"
 import { hasUsableLlm } from "@/lib/has-usable-llm"
 import { resolveMarkdownImageSrc } from "@/lib/markdown-image-resolver"
 import { findRawSourceForImage, imageUrlToAbsolute } from "@/lib/raw-source-resolver"
-import { MermaidDiagram } from "@/components/mermaid-diagram"
+import { detectLanguage } from "@/lib/detect-language"
+import { getHtmlLang, getTextDirection } from "@/lib/language-metadata"
+import { MermaidDiagram, unwrapMermaidPre } from "@/components/mermaid-diagram"
 
 // Module-level cache of source file names
 let cachedSourceFiles: string[] = []
@@ -94,7 +96,7 @@ export function ChatMessage({ message, isLastAssistant, onRegenerate }: ChatMess
           }`}
         >
           {isUser ? (
-            <p className="whitespace-pre-wrap break-words">{message.content}</p>
+            <p dir="auto" className="whitespace-pre-wrap break-words">{message.content}</p>
           ) : (
             <MarkdownContent content={message.content} />
           )}
@@ -654,11 +656,19 @@ function MarkdownContent({ content }: { content: string }) {
   // Separate thinking blocks from main content
   const { thinking, answer } = useMemo(() => separateThinking(cleaned), [cleaned])
   const processed = useMemo(() => processContent(answer), [answer])
+  const renderLanguage = useMemo(() => detectLanguage(answer), [answer])
+  const direction = getTextDirection(renderLanguage)
+  const htmlLang = getHtmlLang(renderLanguage)
 
   return (
     <div>
       {thinking && <ThinkingBlock content={thinking} />}
-      <div className="chat-markdown prose prose-sm max-w-none dark:prose-invert prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-pre:my-2 prose-code:text-xs prose-code:before:content-none prose-code:after:content-none">
+      <div
+        className="chat-markdown prose prose-sm max-w-none dark:prose-invert prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-pre:my-2 prose-code:text-xs prose-code:before:content-none prose-code:after:content-none"
+        dir={direction}
+        lang={htmlLang}
+        style={{ textAlign: "start" }}
+      >
         <ReactMarkdown
           remarkPlugins={[remarkGfm, remarkMath]}
           rehypePlugins={[rehypeKatex]}
@@ -692,21 +702,32 @@ function MarkdownContent({ content }: { content: string }) {
               <thead className="bg-muted" {...props}>{children}</thead>
             ),
             th: ({ children, ...props }) => (
-              <th className="border border-border/80 px-3 py-1.5 text-left font-semibold bg-muted" {...props}>{children}</th>
+              <th className="border border-border/80 px-3 py-1.5 text-start font-semibold bg-muted" {...props}>{children}</th>
             ),
             td: ({ children, ...props }) => (
               <td className="border border-border/60 px-3 py-1.5" {...props}>{children}</td>
             ),
-            pre: ({ children, ...props }) => (
-              <pre className="rounded bg-background/50 p-2 text-xs overflow-x-auto" {...props}>{children}</pre>
-            ),
+            pre: ({ children, ...props }) => {
+              const mermaid = unwrapMermaidPre(children)
+              if (mermaid) return <>{mermaid}</>
+              return (
+                <pre
+                  dir="ltr"
+                  className="rounded bg-background/50 p-2 text-xs overflow-x-auto"
+                  style={{ textAlign: "left" }}
+                  {...props}
+                >
+                  {children}
+                </pre>
+              )
+            },
             code: ({ className, children, ...props }) => {
               const lang = className?.replace("language-", "")
               const codeText = String(children).replace(/\n$/, "")
               if (lang === "mermaid") {
                 return <MermaidDiagram code={codeText} />
               }
-              return <code className={className} {...props}>{children}</code>
+              return <code dir="ltr" className={className} {...props}>{children}</code>
             },
           }}
         >
