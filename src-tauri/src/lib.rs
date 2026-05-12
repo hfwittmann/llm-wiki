@@ -73,6 +73,7 @@ pub fn run() {
             // frontend-generated stream id. Populated by claude_cli_spawn,
             // drained on process exit or by claude_cli_kill.
             app.manage(commands::claude_cli::ClaudeCliState::default());
+            app.manage(commands::codex_cli::CodexCliState::default());
             app.manage(commands::file_sync::FileSyncState::default());
             Ok(())
         })
@@ -105,6 +106,9 @@ pub fn run() {
             commands::claude_cli::claude_cli_detect,
             commands::claude_cli::claude_cli_spawn,
             commands::claude_cli::claude_cli_kill,
+            commands::codex_cli::codex_cli_detect,
+            commands::codex_cli::codex_cli_spawn,
+            commands::codex_cli::codex_cli_kill,
             commands::extract_images::extract_pdf_images_cmd,
             commands::extract_images::extract_office_images_cmd,
             commands::extract_images::extract_and_save_pdf_images_cmd,
