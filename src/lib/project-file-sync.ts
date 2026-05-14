@@ -1,5 +1,5 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
-import { readFile, listDirectory } from "@/commands/fs"
+import { readFile, listDirectory, getFileSize } from "@/commands/fs"
 import {
   startProjectFileWatcher,
   stopProjectFileWatcher,
@@ -9,6 +9,7 @@ import { useFileSyncStore } from "@/stores/file-sync-store"
 import { useWikiStore } from "@/stores/wiki-store"
 import { getFileStem, normalizePath } from "@/lib/path-utils"
 import type { WikiProject } from "@/types/wiki"
+import type { SourceWatchConfig } from "@/stores/wiki-store"
 import type { FileChangeTask } from "@/commands/file-sync"
 import {
   cleanupDeletedWikiPages,
@@ -16,6 +17,7 @@ import {
   enqueueSourceIngest,
   isIngestableSourcePath,
 } from "@/lib/source-lifecycle"
+import { isPathAllowedBySourceWatch, normalizeSourceWatchConfig } from "@/lib/source-watch-config"
 
 let unlistenQueue: UnlistenFn | null = null
 let unlistenChanged: UnlistenFn | null = null
@@ -23,10 +25,15 @@ let startSeq = 0
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
 let pendingRefreshPaths = new Set<string>()
 let pendingChangeTasks = new Map<string, FileChangeTask>()
+let activeSourceWatchConfig = normalizeSourceWatchConfig()
 
-export async function startProjectFileSync(project: WikiProject): Promise<void> {
+export async function startProjectFileSync(
+  project: WikiProject,
+  sourceWatchConfig?: SourceWatchConfig,
+): Promise<void> {
   await stopProjectFileSync()
   const seq = ++startSeq
+  activeSourceWatchConfig = normalizeSourceWatchConfig(sourceWatchConfig)
   useFileSyncStore.getState().setRunning(true)
   useFileSyncStore.getState().setLastError(null)
 
@@ -42,7 +49,7 @@ export async function startProjectFileSync(project: WikiProject): Promise<void> 
   })
 
   try {
-    const queue = await startProjectFileWatcher(project.id, normalizePath(project.path))
+    const queue = await startProjectFileWatcher(project.id, normalizePath(project.path), activeSourceWatchConfig)
     if (seq !== startSeq || project.id !== useWikiStore.getState().project?.id) return
     useFileSyncStore.getState().setTasks(queue.tasks)
   } catch (err) {
@@ -140,11 +147,28 @@ async function refreshAfterFileChanges(project: WikiProject, relativePaths: stri
 }
 
 async function enqueueRawSourceChanges(project: WikiProject, tasks: FileChangeTask[]): Promise<void> {
-  const paths = tasks
+  const config = normalizeSourceWatchConfig(useWikiStore.getState().sourceWatchConfig ?? activeSourceWatchConfig)
+  if (!config.enabled || !config.autoIngest) return
+
+  const candidates = tasks
     .filter((task) => task.projectId === project.id)
     .filter((task) => task.kind === "created" || task.kind === "modified")
     .map((task) => task.path)
     .filter(isIngestableRawSource)
+
+  const paths: string[] = []
+  const maxBytes = config.maxFileSizeMb * 1024 * 1024
+  for (const rel of candidates) {
+    if (!isPathAllowedBySourceWatch(rel, config)) continue
+    try {
+      const size = await getFileSize(`${normalizePath(project.path)}/${rel}`)
+      if (size > maxBytes) continue
+    } catch (err) {
+      console.warn("[file-sync] failed to inspect changed source file:", err)
+      continue
+    }
+    paths.push(rel)
+  }
 
   if (paths.length === 0) return
 

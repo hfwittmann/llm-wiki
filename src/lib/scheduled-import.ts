@@ -2,13 +2,14 @@ import {
   copyFile,
   fileExists,
   getFileMd5,
+  getFileSize,
   listDirectory,
   preprocessFile,
   readFile,
-  writeFile,
+  writeFileAtomic,
 } from "@/commands/fs"
 import type { FileNode, WikiProject } from "@/types/wiki"
-import { normalizePath } from "@/lib/path-utils"
+import { isAbsolutePath, normalizePath } from "@/lib/path-utils"
 import { useWikiStore } from "@/stores/wiki-store"
 import type { ScheduledImportConfig } from "@/stores/wiki-store"
 import {
@@ -27,6 +28,11 @@ interface ImportDb {
 
 interface ImportDbStore {
   version: 1
+  /**
+   * Kept as a map for backward compatibility with early scheduled-import
+   * builds. The current UI supports one watched directory per project, so
+   * saveImportDb intentionally writes only the active directory key.
+   */
   directories: Record<string, ImportDb>
 }
 
@@ -46,6 +52,8 @@ let activeRunId = 0
 const DB_PATH = ".llm-wiki/scheduled-import-db.json"
 const LEGACY_DB_DIR = ".llm-wiki-imported"
 const SCHEDULED_IMPORT_DIR = "scheduled-import"
+const MAX_SCHEDULED_IMPORT_BYTES = 100 * 1024 * 1024
+const SENSITIVE_CONFIG_EXTENSIONS = new Set(["json", "yaml", "yml", "xml"])
 const RESERVED_WINDOWS_NAMES = new Set([
   "con",
   "prn",
@@ -80,7 +88,10 @@ function dbFilePath(projectPath: string): string {
 }
 
 function dbDirectoryKey(importPath: string): string {
-  return normalizePath(importPath)
+  const normalized = normalizePath(importPath)
+  return /^[A-Za-z]:\//.test(normalized) || normalized.startsWith("//")
+    ? normalized.toLowerCase()
+    : normalized
 }
 
 function cloneDb(db: ImportDb): ImportDb {
@@ -103,6 +114,15 @@ function projectSubpath(projectPath: string, relPath: string): string {
   return `${normalizePath(projectPath)}/${relPath}`
 }
 
+function stableSuffix(input: string): string {
+  let hash = 2166136261
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  return (hash >>> 0).toString(36).slice(0, 6)
+}
+
 function sanitizePathSegment(segment: string): string {
   let value = segment
     .replace(/[<>:"|?*\x00-\x1F]/g, "_")
@@ -121,13 +141,31 @@ function sanitizePathSegment(segment: string): string {
   return value
 }
 
+function appendSuffixToFileName(fileName: string, suffix: string): string {
+  const dot = fileName.lastIndexOf(".")
+  if (dot > 0) {
+    return `${fileName.slice(0, dot)}-${suffix}${fileName.slice(dot)}`
+  }
+  return `${fileName}-${suffix}`
+}
+
 function safeRelativePath(path: string): string {
-  const parts = normalizePath(path)
+  const normalized = normalizePath(path)
+  const parts = normalized
     .split("/")
     .filter((part) => part && part !== "." && part !== "..")
-    .map(sanitizePathSegment)
+  const safeParts = parts.map(sanitizePathSegment)
 
-  return parts.length > 0 ? parts.join("/") : "_"
+  if (safeParts.length === 0) {
+    return "_"
+  }
+
+  const safePath = safeParts.join("/")
+  if (safePath !== parts.join("/")) {
+    const last = safeParts[safeParts.length - 1]
+    safeParts[safeParts.length - 1] = appendSuffixToFileName(last, stableSuffix(normalized))
+  }
+  return safeParts.join("/")
 }
 
 export function isScheduledImportInternalPath(path: string): boolean {
@@ -156,6 +194,20 @@ export function shouldSkipScheduledImportFile(
 
   const name = path.split("/").pop() ?? ""
   return name.startsWith(".")
+}
+
+function isSensitiveConfigFile(path: string): boolean {
+  const name = normalizePath(path).split("/").pop() ?? ""
+  const ext = name.includes(".") ? name.split(".").pop()?.toLowerCase() : ""
+  return Boolean(ext && SENSITIVE_CONFIG_EXTENSIONS.has(ext))
+}
+
+export function resolveImportPath(projectPath: string, configPath: string): string {
+  const path = normalizePath(configPath || "raw/sources")
+  if (isAbsolutePath(path)) {
+    return path
+  }
+  return `${normalizePath(projectPath)}/${path}`
 }
 
 export function scheduledImportDestinationForFile(
@@ -227,9 +279,13 @@ async function saveImportDb(
   importPath: string,
   db: ImportDb,
 ): Promise<void> {
-  const store = await loadDbStore(projectPath)
-  store.directories[dbDirectoryKey(importPath)] = cloneDb(db)
-  await writeFile(dbFilePath(projectPath), JSON.stringify(store, null, 2))
+  const store: ImportDbStore = {
+    version: 1,
+    directories: {
+      [dbDirectoryKey(importPath)]: cloneDb(db),
+    },
+  }
+  await writeFileAtomic(dbFilePath(projectPath), JSON.stringify(store, null, 2))
 }
 
 function isCurrentProject(projectId: string): boolean {
@@ -249,7 +305,7 @@ export async function scanAndImport(
 
   scanning = true
   const projectPath = normalizePath(project.path)
-  const importRoot = normalizePath(importPath)
+  const importRoot = resolveImportPath(projectPath, importPath)
 
   try {
     if (!isCurrentRun(project.id, options.runId)) {
@@ -258,69 +314,84 @@ export async function scanAndImport(
 
     const tree = await listDirectory(importRoot)
     const db = await loadImportDb(projectPath, importRoot)
-    const nextDb: ImportDb = {
-      files: {},
-      lastScan: Date.now(),
-    }
+    const nextDb: ImportDb = { files: {}, lastScan: Date.now() }
     const llmConfig = useWikiStore.getState().llmConfig
-    const destPaths: string[] = []
+    const changedFiles: Array<{ key: string; md5: string; destPath: string }> = []
 
     for (const file of collectFiles(tree)) {
-      const sourcePath = normalizePath(file.path)
-      if (
-        shouldSkipScheduledImportFile(projectPath, sourcePath) ||
-        !isIngestableSourcePath(sourcePath)
-      ) {
-        continue
-      }
+      try {
+        const sourcePath = normalizePath(file.path)
+        if (
+          shouldSkipScheduledImportFile(projectPath, sourcePath) ||
+          isSensitiveConfigFile(sourcePath) ||
+          !isIngestableSourcePath(sourcePath)
+        ) {
+          continue
+        }
 
-      if (!isCurrentRun(project.id, options.runId)) {
-        return
-      }
+        if (!isCurrentRun(project.id, options.runId)) {
+          return
+        }
 
-      const key = sourcePath
-      const md5 = await getFileMd5(sourcePath)
-      nextDb.files[key] = md5
+        const size = await getFileSize(sourcePath)
+        if (size > MAX_SCHEDULED_IMPORT_BYTES) {
+          console.warn(
+            `[scheduled-import] skipping ${sourcePath}: ${(size / 1024 / 1024).toFixed(1)} MB exceeds 100 MB limit`,
+          )
+          continue
+        }
 
-      if (db.files[key] === md5) {
-        continue
-      }
+        const key = sourcePath
+        const md5 = await getFileMd5(sourcePath)
 
-      const destPath = scheduledImportDestinationForFile(projectPath, importRoot, file)
-      if (normalizePath(destPath) !== sourcePath) {
-        await copyFile(sourcePath, destPath)
+        if (db.files[key] === md5) {
+          nextDb.files[key] = md5
+          continue
+        }
+
+        const destPath = scheduledImportDestinationForFile(projectPath, importRoot, file)
+        if (normalizePath(destPath) !== sourcePath) {
+          await copyFile(sourcePath, destPath)
+        }
+        changedFiles.push({ key, md5, destPath })
+      } catch (err) {
+        console.warn(`[scheduled-import] skipped ${file.path}:`, err)
       }
-      destPaths.push(destPath)
     }
 
     if (!isCurrentRun(project.id, options.runId)) {
       return
     }
 
-    await saveImportDb(projectPath, importRoot, nextDb)
-
-    if (destPaths.length > 0) {
+    if (changedFiles.length > 0) {
+      const destPaths = changedFiles.map((file) => file.destPath)
       await Promise.all(destPaths.map((path) => preprocessFile(path).catch(() => {})))
       if (isCurrentRun(project.id, options.runId)) {
-        await enqueueSourceIngest(project, destPaths, llmConfig)
-        const projectTree = await listDirectory(projectPath)
-        useWikiStore.getState().setFileTree(projectTree)
-        useWikiStore.getState().bumpDataVersion()
+        const ids = await enqueueSourceIngest(project, destPaths, llmConfig)
+        if (ids.length > 0) {
+          for (const file of changedFiles) {
+            nextDb.files[file.key] = file.md5
+          }
+          const projectTree = await listDirectory(projectPath)
+          useWikiStore.getState().setFileTree(projectTree)
+          useWikiStore.getState().bumpDataVersion()
+        } else {
+          console.warn("[scheduled-import] LLM is not configured; changed files were not marked imported")
+        }
       }
     }
 
-    const currentConfig = (await loadScheduledImportConfig(projectPath)) ?? {
-      enabled: false,
-      path: importRoot,
-      interval: 60,
-      lastScan: null,
-    }
-    await saveScheduledImportConfig(projectPath, {
-      ...currentConfig,
-      lastScan: nextDb.lastScan,
-    })
+    await saveImportDb(projectPath, importRoot, nextDb)
 
-    if (isCurrentProject(project.id)) {
+    const currentConfig = await loadScheduledImportConfig(projectPath)
+    if (currentConfig) {
+      await saveScheduledImportConfig(projectPath, {
+        ...currentConfig,
+        lastScan: nextDb.lastScan,
+      })
+    }
+
+    if (isCurrentProject(project.id) && currentConfig) {
       useWikiStore.getState().setScheduledImportConfig({
         ...currentConfig,
         lastScan: nextDb.lastScan,

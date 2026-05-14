@@ -139,6 +139,16 @@ interface ScheduledImportConfig {
   lastScan: number | null // 上次扫描时间戳
 }
 
+interface SourceWatchConfig {
+  enabled: boolean
+  autoIngest: boolean
+  includeExtensions: string[]
+  excludeExtensions: string[]
+  excludeDirs: string[]
+  excludeGlobs: string[]
+  maxFileSizeMb: number
+}
+
 interface MultimodalConfig {
   enabled: boolean
   /** Reuse `llmConfig` for caption calls. When true, the fields
@@ -233,6 +243,7 @@ interface WikiState {
   outputLanguage: OutputLanguage
   proxyConfig: ProxyConfig
   scheduledImportConfig: ScheduledImportConfig
+  sourceWatchConfig: SourceWatchConfig
   dataVersion: number
 
   setProject: (project: WikiProject | null) => void
@@ -251,6 +262,7 @@ interface WikiState {
   setOutputLanguage: (lang: OutputLanguage) => void
   setProxyConfig: (config: ProxyConfig) => void
   setScheduledImportConfig: (config: ScheduledImportConfig) => void
+  setSourceWatchConfig: (config: SourceWatchConfig) => void
   bumpDataVersion: () => void
 }
 
@@ -331,6 +343,16 @@ export const useWikiStore = create<WikiState>((set) => ({
     lastScan: null,
   },
 
+  sourceWatchConfig: {
+    enabled: true,
+    autoIngest: true,
+    includeExtensions: ["md", "mdx", "txt", "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "rtf", "html", "htm", "csv"],
+    excludeExtensions: ["tmp", "temp", "bak", "swp", "part", "partial", "crdownload", "exe", "dll", "so", "dylib", "bin"],
+    excludeDirs: [".git", ".svn", ".hg", ".obsidian", ".idea", ".vscode", "node_modules", ".cache", "__pycache__"],
+    excludeGlobs: ["~$*", ".~lock.*#", "*.draft.*", "draft-*", "*.private.*"],
+    maxFileSizeMb: 100,
+  },
+
   setLlmConfig: (llmConfig) => set({ llmConfig }),
   setProviderConfigs: (providerConfigs) => set({ providerConfigs }),
   setActivePresetId: (activePresetId) => set({ activePresetId }),
@@ -340,7 +362,8 @@ export const useWikiStore = create<WikiState>((set) => ({
   setOutputLanguage: (outputLanguage) => set({ outputLanguage }),
   setProxyConfig: (proxyConfig) => set({ proxyConfig }),
   setScheduledImportConfig: (scheduledImportConfig) => set({ scheduledImportConfig }),
+  setSourceWatchConfig: (sourceWatchConfig) => set({ sourceWatchConfig }),
   bumpDataVersion: () => set((state) => ({ dataVersion: state.dataVersion + 1 })),
 }))
 
-export type { WikiState, LlmConfig, SearchApiConfig, EmbeddingConfig, MultimodalConfig, OutputLanguage, ProxyConfig, ScheduledImportConfig }
+export type { WikiState, LlmConfig, SearchApiConfig, EmbeddingConfig, MultimodalConfig, OutputLanguage, ProxyConfig, ScheduledImportConfig, SourceWatchConfig }

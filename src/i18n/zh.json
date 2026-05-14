@@ -80,6 +80,7 @@
     "importSourceFiles": "导入源文件",
     "importSourceFolder": "导入源文件夹",
     "refresh": "刷新",
+    "refreshFailed": "刷新原始资料失败：{{error}}",
     "ingest": "提取到 Wiki",
     "delete": "删除资料及相关 Wiki 页面",
     "deleteConfirm": "删除「{{name}}」及其相关 Wiki 页面？\n\n此操作将：\n- 删除原始资料文件\n- 删除由该资料生成的 Wiki 页面\n- 更新 index.md",
@@ -177,6 +178,7 @@
       "multimodal": "图片描述",
       "webSearch": "网页搜索",
       "network": "网络",
+      "sourceWatch": "原始资料监控",
       "scheduledImport": "定时导入",
       "output": "输出偏好",
       "interface": "界面",
@@ -265,6 +267,32 @@
         "urlHelp": "完整 URL，必须带协议头。支持：http://、https://（当前版本不支持 SOCKS5）。",
         "bypassLocal": "本地地址不走代理（推荐）",
         "bypassLocalHelp": "对 localhost、127.0.0.0/8、10.0.0.0/8、172.16.0.0/12、192.168.0.0/16 以及 *.local 的请求会绕过代理。如果你用 Ollama / LM Studio 或局域网内的 LLM 服务，请保持开启。"
+      },
+      "sourceWatch": {
+        "title": "原始资料文件夹自动监控",
+        "description": "监控 raw/sources 的外部变化，并选择哪些文件允许自动进入提取队列。",
+        "enable": "监控项目原始资料文件夹",
+        "enableDescription": "刷新原始资料列表，并为 raw/sources 下允许的新文件或修改文件建立提取任务。",
+        "autoIngest": "自动提取允许的原始资料文件",
+        "autoIngestDescription": "关闭后，外部变化仍会刷新文件树，但不会创建提取任务。",
+        "noProject": "打开项目后才能修改这个项目级设置。",
+        "fileTypes": "允许的文件类型",
+        "fileTypesDescription": "常见文档类型默认开启。媒体、二进制、源码和配置类格式默认关闭，需要时再手动选择。",
+        "exclusions": "排除规则和限制",
+        "maxSize": "自动提取的最大文件大小（MB）",
+        "excludeDirs": "排除的文件夹",
+        "excludeGlobs": "排除的文件名模式",
+        "excludeGlobsHint": "用逗号分隔模式，例如 *.draft.*、~$*、.~lock.*#。",
+        "groups": {
+          "documents": "文档",
+          "presentations": "演示文稿",
+          "spreadsheets": "表格",
+          "web": "网页文档",
+          "data": "数据 / 配置",
+          "images": "图片",
+          "media": "音频 / 视频",
+          "code": "源码"
+        }
       },
       "scheduledImport": {
         "title": "定时导入",

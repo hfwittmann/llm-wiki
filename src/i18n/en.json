@@ -80,6 +80,7 @@
     "importSourceFiles": "Import Source Files",
     "importSourceFolder": "Import Source Folder",
     "refresh": "Refresh",
+    "refreshFailed": "Failed to refresh sources: {{error}}",
     "ingest": "Ingest",
     "delete": "Delete source and related wiki pages",
     "deleteConfirm": "Delete \"{{name}}\" and its related wiki pages?\n\nThis will:\n- Delete the source file\n- Delete wiki pages generated from this source\n- Update index.md",
@@ -177,6 +178,7 @@
       "multimodal": "Image Captioning",
       "webSearch": "Web Search",
       "network": "Network",
+      "sourceWatch": "Source Watch",
       "scheduledImport": "Scheduled Import",
       "output": "Output",
       "interface": "Interface",
@@ -265,6 +267,32 @@
         "urlHelp": "Full URL with scheme. Supported: http://, https://. (SOCKS5 not supported in this version.)",
         "bypassLocal": "Bypass proxy for local addresses (recommended)",
         "bypassLocalHelp": "Requests to localhost, 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, and *.local don't go through the proxy. Keep this on if you use Ollama / LM Studio / other local or LAN-deployed LLMs."
+      },
+      "sourceWatch": {
+        "title": "Source Folder Auto Watch",
+        "description": "Monitor raw/sources for external changes and choose which files are allowed into automatic ingest.",
+        "enable": "Monitor project source folder",
+        "enableDescription": "Refreshes the Sources view and indexes allowed new or modified files under raw/sources.",
+        "autoIngest": "Auto-ingest allowed source files",
+        "autoIngestDescription": "When disabled, external changes still refresh the file tree but do not create ingest tasks.",
+        "noProject": "Open a project to change this project-level setting.",
+        "fileTypes": "Allowed file types",
+        "fileTypesDescription": "Document types are enabled by default. Media, binaries, source code, and config-like formats stay off unless selected.",
+        "exclusions": "Exclusions and limits",
+        "maxSize": "Maximum auto-ingest file size (MB)",
+        "excludeDirs": "Excluded folders",
+        "excludeGlobs": "Excluded filename patterns",
+        "excludeGlobsHint": "Use comma-separated patterns such as *.draft.*, ~$*, .~lock.*#.",
+        "groups": {
+          "documents": "Documents",
+          "presentations": "Presentations",
+          "spreadsheets": "Spreadsheets",
+          "web": "Web documents",
+          "data": "Data / config",
+          "images": "Images",
+          "media": "Audio / video",
+          "code": "Source code"
+        }
       },
       "scheduledImport": {
         "title": "Scheduled Import",

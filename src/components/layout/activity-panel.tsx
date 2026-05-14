@@ -95,7 +95,7 @@ export function ActivityPanel() {
 
   const handleFileSyncRescan = useCallback(() => {
     if (!project) return
-    rescanProjectFiles(project.id, normalizePath(project.path))
+    rescanProjectFiles(project.id, normalizePath(project.path), useWikiStore.getState().sourceWatchConfig)
       .then((queue) => {
         setFileSyncTasks(queue.tasks)
         useFileSyncStore.getState().setLastError(null)

@@ -48,6 +48,16 @@ export async function resetProjectState(): Promise<void> {
     import("@/lib/scheduled-import"),
   ])
 
+  if (scheduledImportMod.status === "fulfilled") {
+    try {
+      scheduledImportMod.value.stopScheduledImport()
+    } catch (err) {
+      console.warn("[Reset Project State] stopScheduledImport failed:", err)
+    }
+  } else {
+    console.warn("[Reset Project State] Failed to load scheduled-import:", scheduledImportMod.reason)
+  }
+
   if (queueMod.status === "fulfilled") {
     try {
       // pauseQueue flushes the active project's state to disk (reverting
@@ -92,13 +102,4 @@ export async function resetProjectState(): Promise<void> {
     console.warn("[Reset Project State] Failed to load project-file-sync:", fileSyncMod.reason)
   }
 
-  if (scheduledImportMod.status === "fulfilled") {
-    try {
-      scheduledImportMod.value.stopScheduledImport()
-    } catch (err) {
-      console.warn("[Reset Project State] stopScheduledImport failed:", err)
-    }
-  } else {
-    console.warn("[Reset Project State] Failed to load scheduled-import:", scheduledImportMod.reason)
-  }
 }

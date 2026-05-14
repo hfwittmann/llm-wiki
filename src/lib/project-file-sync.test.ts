@@ -39,6 +39,7 @@ const mocks = vi.hoisted(() => {
       children?: Array<{ name: string; path: string; is_dir: boolean }>
     }>),
     readFile: vi.fn(async (_path?: string) => ""),
+    getFileSize: vi.fn(async (_path?: string) => 1024),
     writeFile: vi.fn(async () => undefined),
     deleteFile: vi.fn(async () => undefined),
     findRelatedWikiPages: vi.fn(async () => []),
@@ -64,6 +65,7 @@ vi.mock("@/commands/file-sync", () => ({
 vi.mock("@/commands/fs", () => ({
   listDirectory: mocks.listDirectory,
   readFile: mocks.readFile,
+  getFileSize: mocks.getFileSize,
   writeFile: mocks.writeFile,
   deleteFile: mocks.deleteFile,
   findRelatedWikiPages: mocks.findRelatedWikiPages,
@@ -92,6 +94,7 @@ describe("project file sync", () => {
     mocks.clearResolvers()
     mocks.listDirectory.mockImplementation(async (_path?: string) => [])
     mocks.readFile.mockImplementation(async (_path?: string) => "")
+    mocks.getFileSize.mockImplementation(async (_path?: string) => 1024)
     mocks.writeFile.mockImplementation(async () => undefined)
     mocks.deleteFile.mockImplementation(async () => undefined)
     mocks.findRelatedWikiPages.mockImplementation(async () => [])

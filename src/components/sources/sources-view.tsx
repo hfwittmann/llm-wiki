@@ -9,6 +9,7 @@ import type { FileNode } from "@/types/wiki"
 import { useTranslation } from "react-i18next"
 import { normalizePath } from "@/lib/path-utils"
 import { decideDeleteClick } from "@/lib/sources-tree-delete"
+import { rescanProjectFiles } from "@/commands/file-sync"
 import {
   deleteSourceFile,
   deleteSourceFolder,
@@ -28,9 +29,11 @@ export function SourcesView() {
   const setFileContent = useWikiStore((s) => s.setFileContent)
   const setFileTree = useWikiStore((s) => s.setFileTree)
   const llmConfig = useWikiStore((s) => s.llmConfig)
+  const dataVersion = useWikiStore((s) => s.dataVersion)
   const [sources, setSources] = useState<FileNode[]>([])
   const [importing, setImporting] = useState(false)
   const [ingestingPath, setIngestingPath] = useState<string | null>(null)
+  const [refreshError, setRefreshError] = useState<string | null>(null)
   /**
    * Path of the source-tree node currently in "click again to
    * confirm delete" state. Lifted up here (rather than living
@@ -62,14 +65,28 @@ export function SourcesView() {
       // Filter out hidden files/dirs and cache
       const filtered = filterTree(tree)
       setSources(filtered)
-    } catch {
+      setRefreshError(null)
+    } catch (err) {
+      setRefreshError(String(err))
       setSources([])
     }
   }, [project])
 
   useEffect(() => {
     loadSources()
-  }, [loadSources])
+  }, [loadSources, dataVersion])
+
+  async function handleRefreshSources() {
+    if (!project) return
+    const pp = normalizePath(project.path)
+    try {
+      await rescanProjectFiles(project.id, pp, useWikiStore.getState().sourceWatchConfig)
+    } catch (err) {
+      console.warn("[sources] failed to rescan project files:", err)
+      setRefreshError(String(err))
+    }
+    await loadSources()
+  }
 
   async function handleImport() {
     if (!project) return
@@ -239,7 +256,7 @@ export function SourcesView() {
       <div className="flex items-center justify-between border-b px-4 py-3">
         <h2 className="text-sm font-semibold">{t("sources.title")}</h2>
         <div className="flex gap-1">
-          <Button variant="ghost" size="icon" onClick={loadSources} title={t("sources.refresh")}>
+          <Button variant="ghost" size="icon" onClick={handleRefreshSources} title={t("sources.refresh")}>
             <RefreshCw className="h-4 w-4" />
           </Button>
           <Button size="sm" onClick={handleImport} disabled={importing}>
@@ -254,6 +271,14 @@ export function SourcesView() {
       </div>
 
       <ScrollArea className="flex-1">
+        {refreshError && (
+          <div className="mx-4 mt-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {t("sources.refreshFailed", {
+              defaultValue: "Failed to refresh sources: {{error}}",
+              error: refreshError,
+            })}
+          </div>
+        )}
         {sources.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 p-8 text-center text-sm text-muted-foreground">
             <p>{t("sources.noSources")}</p>

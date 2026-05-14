@@ -23,6 +23,8 @@ const MAX_HASH_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_RETRY_COUNT: u32 = 3;
 const APP_WRITE_IGNORE_MS: i64 = 4_000;
 const QUEUE_EMIT_EVERY: usize = 25;
+const LINUX_RESCAN_INTERVAL_MS: i64 = 10_000;
+const DEFAULT_SOURCE_WATCH_MAX_MB: u64 = 100;
 
 static QUEUE_LOCKS: OnceLock<Mutex<BTreeMap<String, Arc<Mutex<()>>>>> = OnceLock::new();
 static APP_WRITE_IGNORES: OnceLock<Mutex<BTreeMap<String, i64>>> = OnceLock::new();
@@ -99,6 +101,80 @@ pub struct FileChangeQueue {
     tasks: Vec<FileChangeTask>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceWatchConfig {
+    enabled: bool,
+    auto_ingest: bool,
+    include_extensions: Vec<String>,
+    exclude_extensions: Vec<String>,
+    exclude_dirs: Vec<String>,
+    exclude_globs: Vec<String>,
+    max_file_size_mb: u64,
+}
+
+impl Default for SourceWatchConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            auto_ingest: true,
+            include_extensions: [
+                "md", "mdx", "txt", "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx",
+                "rtf", "html", "htm", "csv",
+            ]
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
+            exclude_extensions: [
+                "tmp",
+                "temp",
+                "bak",
+                "swp",
+                "part",
+                "partial",
+                "crdownload",
+                "exe",
+                "dll",
+                "so",
+                "dylib",
+                "bin",
+            ]
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
+            exclude_dirs: [
+                ".git",
+                ".svn",
+                ".hg",
+                ".obsidian",
+                ".idea",
+                ".vscode",
+                "node_modules",
+                ".cache",
+                "__pycache__",
+            ]
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
+            exclude_globs: ["~$*", ".~lock.*#", "*.draft.*", "draft-*", "*.private.*"]
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            max_file_size_mb: DEFAULT_SOURCE_WATCH_MAX_MB,
+        }
+    }
+}
+
+fn normalize_source_watch_config(config: Option<SourceWatchConfig>) -> SourceWatchConfig {
+    let mut config = config.unwrap_or_default();
+    config.include_extensions = normalize_ext_list(config.include_extensions);
+    config.exclude_extensions = normalize_ext_list(config.exclude_extensions);
+    config.exclude_dirs = normalize_string_list(config.exclude_dirs);
+    config.exclude_globs = normalize_string_list(config.exclude_globs);
+    config.max_file_size_mb = config.max_file_size_mb.clamp(1, 4096);
+    config
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct FileSyncPayload {
@@ -112,20 +188,24 @@ pub fn start_project_file_watcher(
     state: State<FileSyncState>,
     project_id: String,
     project_path: String,
+    source_watch_config: Option<SourceWatchConfig>,
 ) -> Result<FileChangeQueue, String> {
     run_guarded("start_project_file_watcher", || {
         let root = PathBuf::from(project_path);
+        let source_watch_config = normalize_source_watch_config(source_watch_config);
         ensure_sync_dir(&root)?;
         with_queue_lock(&root, || reset_processing_tasks(&root, &project_id))?;
-        enqueue_rescan_changes(&root, &project_id)?;
+        enqueue_rescan_changes(&root, &project_id, &source_watch_config)?;
         process_queue(&app, &root, &project_id)?;
 
         let (tx, rx) = mpsc::sync_channel::<PathBuf>(8_192);
         let app_for_thread = app.clone();
         let root_for_thread = root.clone();
         let project_for_thread = project_id.clone();
+        let config_for_thread = source_watch_config.clone();
         std::thread::spawn(move || {
             let mut pending = BTreeSet::<PathBuf>::new();
+            let mut last_periodic_rescan = now_ms();
             loop {
                 match rx.recv_timeout(Duration::from_millis(700)) {
                     Ok(path) => {
@@ -136,6 +216,13 @@ pub fn start_project_file_watcher(
                     }
                     Err(mpsc::RecvTimeoutError::Timeout) => {
                         if pending.is_empty() {
+                            maybe_periodic_rescan(
+                                &app_for_thread,
+                                &root_for_thread,
+                                &project_for_thread,
+                                &config_for_thread,
+                                &mut last_periodic_rescan,
+                            );
                             continue;
                         }
                         let paths = pending.iter().cloned().collect::<Vec<_>>();
@@ -145,6 +232,7 @@ pub fn start_project_file_watcher(
                                 &app_for_thread,
                                 &root_for_thread,
                                 &project_for_thread,
+                                &config_for_thread,
                                 paths,
                             )
                         }));
@@ -153,6 +241,13 @@ pub fn start_project_file_watcher(
                             Ok(Err(err)) => eprintln!("[file-sync] change handling failed: {err}"),
                             Err(_) => eprintln!("[file-sync] watcher worker recovered from panic"),
                         }
+                        maybe_periodic_rescan(
+                            &app_for_thread,
+                            &root_for_thread,
+                            &project_for_thread,
+                            &config_for_thread,
+                            &mut last_periodic_rescan,
+                        );
                     }
                     Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 }
@@ -185,6 +280,17 @@ pub fn start_project_file_watcher(
         watcher
             .watch(&root, RecursiveMode::Recursive)
             .map_err(|e| format!("Failed to watch '{}': {e}", root.display()))?;
+        for rel in ["raw/sources", "wiki"] {
+            let path = root.join(rel);
+            if path.exists() {
+                if let Err(err) = watcher.watch(&path, RecursiveMode::Recursive) {
+                    eprintln!(
+                        "[file-sync] failed to add supplemental watch '{}': {err}",
+                        path.display()
+                    );
+                }
+            }
+        }
 
         {
             let mut inner = state.inner.lock().map_err(|_| "file sync state poisoned")?;
@@ -215,11 +321,13 @@ pub fn rescan_project_files(
     app: AppHandle,
     project_id: String,
     project_path: String,
+    source_watch_config: Option<SourceWatchConfig>,
 ) -> Result<FileChangeQueue, String> {
     run_guarded("rescan_project_files", || {
         let root = PathBuf::from(project_path);
+        let source_watch_config = normalize_source_watch_config(source_watch_config);
         ensure_sync_dir(&root)?;
-        enqueue_rescan_changes(&root, &project_id)?;
+        enqueue_rescan_changes(&root, &project_id, &source_watch_config)?;
         process_queue(&app, &root, &project_id)?;
         let queue = with_queue_lock(&root, || read_queue(&root))?;
         emit_queue(&app, &project_id, &queue);
@@ -302,6 +410,7 @@ fn handle_changed_paths(
     app: &AppHandle,
     root: &Path,
     project_id: &str,
+    source_watch_config: &SourceWatchConfig,
     paths: Vec<PathBuf>,
 ) -> Result<(), String> {
     let mut rels = BTreeSet::<String>::new();
@@ -309,21 +418,21 @@ fn handle_changed_paths(
     let snapshot = with_queue_lock(root, || read_snapshot(root))?;
     for path in paths {
         if is_app_write_ignored(&path) {
-            collect_known_paths(root, &path, &snapshot, &mut app_written_rels);
+            collect_known_paths(root, &path, &snapshot, &mut app_written_rels, source_watch_config);
             continue;
         }
         if path.is_dir() {
             for entry in WalkDir::new(&path).into_iter().filter_map(Result::ok) {
                 if entry.file_type().is_file() && !is_app_write_ignored(entry.path()) {
-                    if let Some(rel) = relative_watch_path(root, entry.path()) {
+                    if let Some(rel) = relative_watch_path(root, entry.path(), source_watch_config) {
                         rels.insert(rel);
                     }
                 }
             }
-        } else if let Some(rel) = relative_watch_path(root, &path) {
+        } else if let Some(rel) = relative_watch_path(root, &path, source_watch_config) {
             rels.insert(rel);
         } else if !path.exists() {
-            collect_known_paths(root, &path, &snapshot, &mut rels);
+            collect_known_paths(root, &path, &snapshot, &mut rels, source_watch_config);
         }
     }
     if !app_written_rels.is_empty() {
@@ -339,16 +448,56 @@ fn handle_changed_paths(
     Ok(())
 }
 
+fn maybe_periodic_rescan(
+    app: &AppHandle,
+    root: &Path,
+    project_id: &str,
+    source_watch_config: &SourceWatchConfig,
+    last_periodic_rescan: &mut i64,
+) {
+    if !cfg!(target_os = "linux") || now_ms() - *last_periodic_rescan < LINUX_RESCAN_INTERVAL_MS {
+        return;
+    }
+    *last_periodic_rescan = now_ms();
+    let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        rescan_watch_roots(app, root, project_id, source_watch_config)
+    }));
+    match result {
+        Ok(Ok(())) => {}
+        Ok(Err(err)) => eprintln!("[file-sync] periodic rescan failed: {err}"),
+        Err(_) => eprintln!("[file-sync] periodic rescan recovered from panic"),
+    }
+}
+
+fn rescan_watch_roots(
+    app: &AppHandle,
+    root: &Path,
+    project_id: &str,
+    source_watch_config: &SourceWatchConfig,
+) -> Result<(), String> {
+    enqueue_rescan_changes_for_prefixes(
+        root,
+        project_id,
+        &["raw/sources", "wiki", "purpose.md", "schema.md"],
+        source_watch_config,
+    )?;
+    process_queue(app, root, project_id)?;
+    let queue = with_queue_lock(root, || read_queue(root))?;
+    emit_queue(app, project_id, &queue);
+    Ok(())
+}
+
 fn collect_known_paths(
     root: &Path,
     path: &Path,
     snapshot: &FileSnapshot,
     rels: &mut BTreeSet<String>,
+    source_watch_config: &SourceWatchConfig,
 ) {
     if path.is_dir() {
         for entry in WalkDir::new(path).into_iter().filter_map(Result::ok) {
             if entry.file_type().is_file() {
-                if let Some(rel) = relative_watch_path(root, entry.path()) {
+                if let Some(rel) = relative_watch_path(root, entry.path(), source_watch_config) {
                     rels.insert(rel);
                 }
             }
@@ -371,7 +520,7 @@ fn collect_known_paths(
         return;
     }
 
-    if should_watch_rel(&rel) {
+    if should_watch_rel(&rel, source_watch_config) {
         rels.insert(rel);
     }
 }
@@ -400,11 +549,15 @@ fn sync_snapshot_paths(root: &Path, rels: BTreeSet<String>) -> Result<(), String
     })
 }
 
-fn enqueue_rescan_changes(root: &Path, project_id: &str) -> Result<(), String> {
+fn enqueue_rescan_changes(
+    root: &Path,
+    project_id: &str,
+    source_watch_config: &SourceWatchConfig,
+) -> Result<(), String> {
     let mut rels = BTreeSet::<String>::new();
     for entry in WalkDir::new(root).into_iter().filter_map(Result::ok) {
         if entry.file_type().is_file() {
-            if let Some(rel) = relative_watch_path(root, entry.path()) {
+            if let Some(rel) = relative_watch_path(root, entry.path(), source_watch_config) {
                 rels.insert(rel);
             }
         }
@@ -416,6 +569,52 @@ fn enqueue_rescan_changes(root: &Path, project_id: &str) -> Result<(), String> {
             rels.insert(rel.clone());
         }
     }
+    enqueue_paths(root, project_id, rels)
+}
+
+fn enqueue_rescan_changes_for_prefixes(
+    root: &Path,
+    project_id: &str,
+    prefixes: &[&str],
+    source_watch_config: &SourceWatchConfig,
+) -> Result<(), String> {
+    let mut rels = BTreeSet::<String>::new();
+    let snapshot = with_queue_lock(root, || read_snapshot(root))?;
+    for prefix in prefixes {
+        let path = root.join(prefix);
+        if path.is_file() {
+            if let Some(rel) = relative_watch_path(root, &path, source_watch_config) {
+                let old = snapshot.files.get(&rel);
+                let fast = read_meta_fast(root, &rel)?;
+                if old.map(|m| (m.size, m.mtime_ms)) != fast.as_ref().map(|m| (m.size, m.mtime_ms)) {
+                    rels.insert(rel);
+                }
+            }
+        } else if path.exists() {
+            for entry in WalkDir::new(&path).into_iter().filter_map(Result::ok) {
+                if entry.file_type().is_file() {
+                    if let Some(rel) = relative_watch_path(root, entry.path(), source_watch_config) {
+                        let old = snapshot.files.get(&rel);
+                        let fast = read_meta_fast(root, &rel)?;
+                        if old.map(|m| (m.size, m.mtime_ms)) != fast.as_ref().map(|m| (m.size, m.mtime_ms)) {
+                            rels.insert(rel);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    for rel in snapshot.files.keys() {
+        if prefixes
+            .iter()
+            .any(|prefix| rel == *prefix || rel.starts_with(&format!("{prefix}/")))
+            && !root.join(rel).exists()
+        {
+            rels.insert(rel.clone());
+        }
+    }
+
     enqueue_paths(root, project_id, rels)
 }
 
@@ -702,6 +901,29 @@ fn read_meta(root: &Path, rel: &str) -> Result<Option<FileMeta>, String> {
     }))
 }
 
+fn read_meta_fast(root: &Path, rel: &str) -> Result<Option<FileMeta>, String> {
+    let path = root.join(rel);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let meta = fs::metadata(&path).map_err(|e| format!("metadata failed for {rel}: {e}"))?;
+    if !meta.is_file() {
+        return Ok(None);
+    }
+    let size = meta.len();
+    let mtime_ms = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    Ok(Some(FileMeta {
+        hash: None,
+        size,
+        mtime_ms,
+    }))
+}
+
 fn md5_file(path: &Path) -> Result<String, String> {
     let mut file =
         fs::File::open(path).map_err(|e| format!("open failed for '{}': {e}", path.display()))?;
@@ -719,14 +941,19 @@ fn md5_file(path: &Path) -> Result<String, String> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-fn relative_watch_path(root: &Path, path: &Path) -> Option<String> {
+fn relative_watch_path(root: &Path, path: &Path, source_watch_config: &SourceWatchConfig) -> Option<String> {
     let rel = path.strip_prefix(root).ok()?;
     let rel = normalize_rel_path(rel)?;
-    if should_watch_rel(&rel) {
-        Some(rel)
-    } else {
-        None
+    if !should_watch_rel(&rel, source_watch_config) {
+        return None;
     }
+    if rel.starts_with("raw/sources/") && path.exists() {
+        let max_bytes = source_watch_config.max_file_size_mb.saturating_mul(1024 * 1024);
+        if fs::metadata(path).ok()?.len() > max_bytes {
+            return None;
+        }
+    }
+    Some(rel)
 }
 
 fn normalize_rel_path(path: &Path) -> Option<String> {
@@ -741,7 +968,7 @@ fn normalize_rel_path(path: &Path) -> Option<String> {
     Some(parts.join("/"))
 }
 
-fn should_watch_rel(rel: &str) -> bool {
+fn should_watch_rel(rel: &str, source_watch_config: &SourceWatchConfig) -> bool {
     if rel.is_empty() {
         return false;
     }
@@ -774,10 +1001,105 @@ fn should_watch_rel(rel: &str) -> bool {
     {
         return false;
     }
+    let excluded_dirs = source_watch_config
+        .exclude_dirs
+        .iter()
+        .map(|dir| dir.to_lowercase())
+        .collect::<BTreeSet<_>>();
+    if lower
+        .split('/')
+        .any(|part| !part.is_empty() && excluded_dirs.contains(part))
+    {
+        return false;
+    }
+    if source_watch_config
+        .exclude_globs
+        .iter()
+        .any(|pattern| wildcard_match(pattern, rel) || wildcard_match(pattern, name))
+    {
+        return false;
+    }
+    if rel.starts_with("raw/sources/") {
+        let ext = extension_of(name);
+        if !ext.is_empty()
+            && source_watch_config
+                .exclude_extensions
+                .iter()
+                .any(|candidate| candidate == ext)
+        {
+            return false;
+        }
+        if !source_watch_config.include_extensions.is_empty()
+            && (ext.is_empty()
+                || !source_watch_config
+                    .include_extensions
+                    .iter()
+                    .any(|candidate| candidate == ext))
+        {
+            return false;
+        }
+        return true;
+    }
     rel == "purpose.md"
         || rel == "schema.md"
         || (rel.starts_with("wiki/") && rel.ends_with(".md"))
-        || rel.starts_with("raw/sources/")
+}
+
+fn extension_of(name: &str) -> &str {
+    name.rsplit_once('.').map(|(_, ext)| ext).unwrap_or("")
+}
+
+fn normalize_ext_list(values: Vec<String>) -> Vec<String> {
+    values
+        .into_iter()
+        .map(|value| value.trim().trim_start_matches('.').to_lowercase())
+        .filter(|value| !value.is_empty())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn normalize_string_list(values: Vec<String>) -> Vec<String> {
+    values
+        .into_iter()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn wildcard_match(pattern: &str, value: &str) -> bool {
+    wildcard_match_inner(
+        pattern.to_lowercase().as_bytes(),
+        value.to_lowercase().as_bytes(),
+    )
+}
+
+fn wildcard_match_inner(pattern: &[u8], value: &[u8]) -> bool {
+    let (mut p, mut v) = (0usize, 0usize);
+    let mut star: Option<usize> = None;
+    let mut match_after_star = 0usize;
+    while v < value.len() {
+        if p < pattern.len() && (pattern[p] == b'?' || pattern[p] == value[v]) {
+            p += 1;
+            v += 1;
+        } else if p < pattern.len() && pattern[p] == b'*' {
+            star = Some(p);
+            match_after_star = v;
+            p += 1;
+        } else if let Some(star_pos) = star {
+            p = star_pos + 1;
+            match_after_star += 1;
+            v = match_after_star;
+        } else {
+            return false;
+        }
+    }
+    while p < pattern.len() && pattern[p] == b'*' {
+        p += 1;
+    }
+    p == pattern.len()
 }
 
 fn merge_kind(existing: &FileChangeKind, incoming: &FileChangeKind) -> FileChangeKind {
@@ -979,6 +1301,10 @@ mod tests {
         root
     }
 
+    fn default_watch_config() -> SourceWatchConfig {
+        SourceWatchConfig::default()
+    }
+
     #[test]
     fn md5_detects_same_size_content_changes() {
         let root = temp_root("same-size");
@@ -986,7 +1312,7 @@ mod tests {
         fs::write(root.join(rel), "aaaa").unwrap();
 
         ensure_sync_dir(&root).unwrap();
-        enqueue_rescan_changes(&root, "p1").unwrap();
+        enqueue_rescan_changes(&root, "p1", &default_watch_config()).unwrap();
         let first = read_queue(&root).unwrap().tasks[0].clone();
         apply_task_to_snapshot(&root, &first).unwrap();
         write_queue(
@@ -1048,9 +1374,36 @@ mod tests {
             &root.join("raw/sources/folder"),
             &snapshot,
             &mut rels,
+            &default_watch_config(),
         );
 
         assert_eq!(rels, BTreeSet::from([a.to_string(), b.to_string()]));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn prefix_rescan_detects_raw_source_mount_style_changes() {
+        let root = temp_root("prefix-rescan");
+        let old = "raw/sources/old.md";
+        let new = "raw/sources/new.md";
+        fs::write(root.join(old), "old").unwrap();
+
+        ensure_sync_dir(&root).unwrap();
+        sync_snapshot_paths(&root, BTreeSet::from([old.to_string()])).unwrap();
+        fs::remove_file(root.join(old)).unwrap();
+        fs::write(root.join(new), "new").unwrap();
+
+        enqueue_rescan_changes_for_prefixes(&root, "p1", &["raw/sources"], &default_watch_config()).unwrap();
+        let queue = read_queue(&root).unwrap();
+        let by_path = queue
+            .tasks
+            .iter()
+            .map(|task| (task.path.as_str(), task.kind.clone()))
+            .collect::<BTreeMap<_, _>>();
+
+        assert_eq!(by_path.get(old), Some(&FileChangeKind::Deleted));
+        assert_eq!(by_path.get(new), Some(&FileChangeKind::Created));
 
         let _ = fs::remove_dir_all(root);
     }
@@ -1070,7 +1423,7 @@ mod tests {
         let mut app_written_rels = BTreeSet::new();
         let snapshot = read_snapshot(&root).unwrap();
         if is_app_write_ignored(&path) {
-            collect_known_paths(&root, &path, &snapshot, &mut app_written_rels);
+            collect_known_paths(&root, &path, &snapshot, &mut app_written_rels, &default_watch_config());
         }
         sync_snapshot_paths(&root, app_written_rels).unwrap();
 
@@ -1130,16 +1483,50 @@ mod tests {
 
     #[test]
     fn watch_rules_exclude_temporary_and_app_dirs() {
-        assert!(should_watch_rel("raw/sources/doc.md"));
-        assert!(should_watch_rel("wiki/concepts/topic.md"));
-        assert!(!should_watch_rel(".llm-wiki/file-change-queue.json"));
-        assert!(!should_watch_rel("raw/sources/~$Document.docx"));
-        assert!(!should_watch_rel("raw/sources/.~lock.Document.odt#"));
-        assert!(!should_watch_rel("raw/sources/Thumbs.db"));
-        assert!(!should_watch_rel("raw/sources/desktop.ini"));
-        assert!(!should_watch_rel("raw/sources/download.crdownload"));
-        assert!(!should_watch_rel(".vscode/settings.json"));
-        assert!(!should_watch_rel("wiki/media/image.png"));
+        let config = default_watch_config();
+        assert!(should_watch_rel("raw/sources/doc.md", &config));
+        assert!(should_watch_rel("wiki/concepts/topic.md", &config));
+        assert!(!should_watch_rel(".llm-wiki/file-change-queue.json", &config));
+        assert!(!should_watch_rel("raw/sources/~$Document.docx", &config));
+        assert!(!should_watch_rel("raw/sources/.~lock.Document.odt#", &config));
+        assert!(!should_watch_rel("raw/sources/Thumbs.db", &config));
+        assert!(!should_watch_rel("raw/sources/desktop.ini", &config));
+        assert!(!should_watch_rel("raw/sources/download.crdownload", &config));
+        assert!(!should_watch_rel(".vscode/settings.json", &config));
+        assert!(!should_watch_rel("wiki/media/image.png", &config));
+    }
+
+    #[test]
+    fn source_watch_config_filters_raw_source_extensions_and_dirs() {
+        let config = SourceWatchConfig {
+            include_extensions: vec!["md".into(), "pdf".into()],
+            exclude_dirs: vec!["drafts".into()],
+            exclude_globs: vec!["*.private.*".into()],
+            ..SourceWatchConfig::default()
+        };
+        let config = normalize_source_watch_config(Some(config));
+
+        assert!(should_watch_rel("raw/sources/final.md", &config));
+        assert!(!should_watch_rel("raw/sources/data.json", &config));
+        assert!(!should_watch_rel("raw/sources/drafts/final.md", &config));
+        assert!(!should_watch_rel("raw/sources/report.private.md", &config));
+        assert!(should_watch_rel("wiki/index.md", &config));
+    }
+
+    #[test]
+    fn source_watch_config_skips_oversized_raw_sources() {
+        let root = temp_root("max-size");
+        let rel = "raw/sources/large.md";
+        fs::write(root.join(rel), vec![b'x'; 2 * 1024 * 1024]).unwrap();
+        let config = SourceWatchConfig {
+            max_file_size_mb: 1,
+            ..SourceWatchConfig::default()
+        };
+        let config = normalize_source_watch_config(Some(config));
+
+        assert_eq!(relative_watch_path(&root, &root.join(rel), &config), None);
+
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
