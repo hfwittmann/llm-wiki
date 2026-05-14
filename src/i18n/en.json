@@ -116,20 +116,6 @@
     "startSearching": "Type to search wiki pages"
   },
   "lint": {
-    "title": "Lint",
-    "runLint": "Run Lint",
-    "running": "Running...",
-    "semantic": "Semantic (LLM)",
-    "allClear": "All clear — no issues found",
-    "orphan": "Orphan Page",
-    "brokenLink": "Broken Link",
-    "noOutlinks": "No Outbound Links",
-    "contradiction": "Contradiction",
-    "stale": "Stale Content",
-    "missingPage": "Missing Page",
-    "suggestion": "Suggestion"
-  },
-  "lint": {
     "title": "Wiki Lint",
     "semantic": "Semantic (LLM)",
     "running": "Running...",
@@ -286,6 +272,7 @@
         "enable": "Enable scheduled import",
         "directory": "Monitor Directory",
         "directoryHelp": "Relative path from project root (e.g., 'raw', 'docs/input'). Files in this directory will be automatically imported. Defaults to 'raw'.",
+        "privacyNotice": "Files from the selected directory may be copied into this project and sent to your configured LLM during ingest. Removed files are not automatically deleted from the project.",
         "browse": "Browse",
         "selectDirectory": "Select Directory to Monitor",
         "interval": "Scan Interval (minutes)",

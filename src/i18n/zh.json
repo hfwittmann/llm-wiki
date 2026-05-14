@@ -47,6 +47,28 @@
     "aiOutputLanguageHint": "所有 AI 生成的内容（Wiki 页面、聊天回复、Research 结果）都将使用此语言。您可以在设置 → 输出 中稍后更改。",
     "pickLanguage": "选择语言..."
   },
+  "templates": {
+    "research": {
+      "name": "研究",
+      "description": "用于深度研究，包含假设跟踪和方法论记录"
+    },
+    "reading": {
+      "name": "阅读",
+      "description": "跟踪书籍的人物、主题、情节线和章节笔记"
+    },
+    "personal": {
+      "name": "个人成长",
+      "description": "记录目标、习惯、反思和成长日志"
+    },
+    "business": {
+      "name": "商务",
+      "description": "管理团队会议、决策、项目和干系人背景"
+    },
+    "general": {
+      "name": "通用",
+      "description": "最小化初始结构，适合从空白开始"
+    }
+  },
   "sources": {
     "title": "原始资料",
     "import": "导入",
@@ -92,20 +114,6 @@
     "placeholder": "搜索 Wiki 页面...",
     "noResults": "未找到相关结果",
     "startSearching": "输入关键词搜索 Wiki 页面"
-  },
-  "lint": {
-    "title": "检查",
-    "runLint": "开始检查",
-    "running": "检查中...",
-    "semantic": "语义检查（LLM）",
-    "allClear": "一切正常，未发现问题",
-    "orphan": "孤立页面",
-    "brokenLink": "失效链接",
-    "noOutlinks": "无出链",
-    "contradiction": "内容矛盾",
-    "stale": "内容过时",
-    "missingPage": "缺失页面",
-    "suggestion": "建议"
   },
   "lint": {
     "title": "Wiki 检查",
@@ -264,6 +272,7 @@
         "enable": "启用定时导入",
         "directory": "监控目录",
         "directoryHelp": "相对于项目根目录的路径（如 'raw'、'docs/input'）。该目录中的文件将被自动导入。默认为 'raw'。",
+        "privacyNotice": "所选目录中的文件可能会被复制到当前项目，并在提取时发送给你配置的 LLM。源目录中删除文件不会自动删除项目内已导入内容。",
         "browse": "浏览",
         "selectDirectory": "选择监控目录",
         "interval": "扫描间隔（分钟）",

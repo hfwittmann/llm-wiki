@@ -317,12 +317,22 @@ export function SettingsView() {
     const newScheduledImport = {
       enabled: draft.scheduledImportEnabled,
       path: draft.scheduledImportPath,
-      interval: draft.scheduledImportInterval,
+      interval: Math.max(1, Math.min(1440, draft.scheduledImportInterval || 60)),
       lastScan: scheduledImportConfig.lastScan,
     }
     setScheduledImportConfig(newScheduledImport)
     if (project) {
       await saveScheduledImportConfig(project.path, newScheduledImport)
+      const { startScheduledImport, stopScheduledImport } = await import("@/lib/scheduled-import")
+      if (
+        newScheduledImport.enabled &&
+        newScheduledImport.path &&
+        newScheduledImport.interval > 0
+      ) {
+        startScheduledImport(project, newScheduledImport)
+      } else {
+        stopScheduledImport()
+      }
     }
 
     setMaxHistoryMessages(draft.maxHistoryMessages)
@@ -345,7 +355,6 @@ export function SettingsView() {
     scheduledImportConfig,
     setMaxHistoryMessages,
     outputLanguage,
-    project,
   ])
 
   const body = useMemo(() => {

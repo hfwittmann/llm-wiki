@@ -1375,10 +1375,19 @@ pub async fn get_file_md5(path: String) -> Result<String, String> {
     use md5::{Digest, Md5};
     tauri::async_runtime::spawn_blocking(move || {
         run_guarded("get_file_md5", || {
-            let bytes = fs::read(&path)
-                .map_err(|e| format!("Failed to read file '{}': {}", path, e))?;
+            let mut file = fs::File::open(&path)
+                .map_err(|e| format!("Failed to open file '{}': {}", path, e))?;
             let mut hasher = Md5::new();
-            hasher.update(&bytes);
+            let mut buffer = [0u8; 64 * 1024];
+            loop {
+                let read = file
+                    .read(&mut buffer)
+                    .map_err(|e| format!("Failed to read file '{}': {}", path, e))?;
+                if read == 0 {
+                    break;
+                }
+                hasher.update(&buffer[..read]);
+            }
             let result = hasher.finalize();
             Ok(format!("{:x}", result))
         })

@@ -307,7 +307,7 @@ function App() {
     const scheduledImportConfig = useWikiStore.getState().scheduledImportConfig
     if (scheduledImportConfig.enabled && scheduledImportConfig.path && scheduledImportConfig.interval > 0) {
       import("@/lib/scheduled-import").then(({ startScheduledImport }) => {
-        startScheduledImport(proj.path, scheduledImportConfig)
+        startScheduledImport(proj, scheduledImportConfig)
       }).catch((err) =>
         console.error("Failed to start scheduled import:", err)
       )
