@@ -26,6 +26,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.4.12",
+    date: "2026-05-19",
+    highlights: {
+      en: [
+        "Fixed SearXNG web search configuration so self-hosted instances work without requiring an API key.",
+      ],
+      zh: [
+        "修复 SearXNG 网页搜索配置：自托管实例不再被错误要求填写 API Key。",
+      ],
+    },
+  },
+  {
     version: "0.4.11",
     date: "2026-05-19",
     highlights: {
