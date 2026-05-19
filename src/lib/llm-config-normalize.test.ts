@@ -1,8 +1,5 @@
 import { describe, it, expect } from "vitest"
-import {
-  buildAzureOpenAiUrl,
-  normalizeActivePresetId,
-} from "./llm-config-normalize"
+import { buildAzureOpenAiUrl } from "./llm-config-normalize"
 
 describe("buildAzureOpenAiUrl", () => {
   it("builds deployment chat URL with api-version", () => {
@@ -27,11 +24,5 @@ describe("buildAzureOpenAiUrl", () => {
     ).toBe(
       "https://my-resource.openai.azure.com/openai/deployments/my-gpt5/chat/completions?api-version=2024-10-21",
     )
-  })
-})
-
-describe("normalizeActivePresetId", () => {
-  it("maps legacy azure-openai preset id to azure", () => {
-    expect(normalizeActivePresetId("azure-openai")).toBe("azure")
   })
 })

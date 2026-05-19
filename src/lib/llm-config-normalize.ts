@@ -70,8 +70,3 @@ export function buildAzureOpenAiUrl(
   const dep = encodeURIComponent(parsed.deployment)
   return `${parsed.resourceBase}/openai/deployments/${dep}/chat/completions?api-version=${version}`
 }
-
-export function normalizeActivePresetId(id: string | null): string | null {
-  if (id === "azure-openai") return "azure"
-  return id
-}
