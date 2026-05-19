@@ -101,6 +101,9 @@ export function hasConfiguredSearchProvider(config: SearchApiConfig): boolean {
   if (resolved.provider === "searxng") {
     return Boolean(resolved.searXngUrl?.trim())
   }
+  if (resolved.provider === "ollama") {
+    return true // Ollama uses default localhost URL if not configured
+  }
   return Boolean(resolved.apiKey?.trim())
 }
 
@@ -114,7 +117,7 @@ export async function webSearch(
     throw new Error("Web search not configured. Select a search provider in Settings.")
   }
   if ((resolved.provider === "tavily" || resolved.provider === "serpapi") && !resolved.apiKey) {
-    throw new Error("Web search not configured. Add a Tavily or SerpApi API key in Settings.")
+    throw new Error("Web search not configured. Add a Tavily or SerpApi API key in Settings, or select a different provider.")
   }
   if (resolved.provider === "searxng" && !resolved.searXngUrl?.trim()) {
     throw new Error("Web search not configured. Add a SearXNG instance URL in Settings.")
