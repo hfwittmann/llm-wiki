@@ -34,6 +34,7 @@ pub struct DetectResult {
 
 const CODEX_SPAWN_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const STDERR_LIMIT_BYTES: usize = 1024 * 1024;
+const STDOUT_LIMIT_BYTES: usize = 1024 * 1024;
 
 fn find_codex_command() -> Result<PathBuf, String> {
     #[cfg(windows)]
@@ -210,9 +211,21 @@ pub async fn codex_cli_spawn(
             collected
         });
 
+        let mut stdout_text = String::new();
         loop {
             match reader.next_line().await {
                 Ok(Some(line)) => {
+                    if stdout_text.len() < STDOUT_LIMIT_BYTES {
+                        for ch in line.chars() {
+                            if stdout_text.len() + ch.len_utf8() > STDOUT_LIMIT_BYTES {
+                                break;
+                            }
+                            stdout_text.push(ch);
+                        }
+                        if stdout_text.len() < STDOUT_LIMIT_BYTES {
+                            stdout_text.push('\n');
+                        }
+                    }
                     if app.emit(&topic, line).is_err() {
                         break;
                     }
@@ -244,6 +257,9 @@ pub async fn codex_cli_spawn(
         } else if stderr_text.len() >= STDERR_LIMIT_BYTES {
             stderr_text.push_str("\n[stderr truncated]");
         }
+        if stdout_text.len() >= STDOUT_LIMIT_BYTES {
+            stdout_text.push_str("\n[stdout truncated]");
+        }
 
         let code = if timed_out.load(Ordering::SeqCst) {
             Some(-1)
@@ -256,6 +272,7 @@ pub async fn codex_cli_spawn(
             serde_json::json!({
                 "code": code,
                 "stderr": stderr_text,
+                "stdout": stdout_text,
             }),
         );
     });
