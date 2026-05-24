@@ -9,6 +9,7 @@ import { readFile, listDirectory } from "@/commands/fs"
 import type { FileNode } from "@/types/wiki"
 import { normalizePath } from "@/lib/path-utils"
 import { cascadeDeleteWikiPagesWithRefs } from "@/lib/wiki-page-delete"
+import { inferWikiTypeFromPath } from "@/lib/wiki-page-types"
 
 interface WikiPageInfo {
   path: string
@@ -326,16 +327,7 @@ function parsePageInfo(path: string, fileName: string, content: string): WikiPag
 
   // Fallback: infer type from path
   if (type === "other") {
-    if (path.includes("/entities/")) type = "entity"
-    else if (path.includes("/concepts/")) type = "concept"
-    else if (path.includes("/sources/")) type = "source"
-    else if (path.includes("/queries/")) type = "query"
-    else if (path.includes("/comparisons/")) type = "comparison"
-    else if (path.includes("/synthesis/")) type = "synthesis"
-    else if (path.includes("/findings/")) type = "finding"
-    else if (path.includes("/thesis/")) type = "thesis"
-    else if (path.includes("/methodology/")) type = "methodology"
-    else if (fileName === "overview.md") type = "overview"
+    type = inferWikiTypeFromPath(path, fileName) ?? "other"
   }
 
   return { path, title, type, tags, origin }

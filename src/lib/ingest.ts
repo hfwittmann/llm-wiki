@@ -21,6 +21,7 @@ import {
 } from "@/lib/extract-source-images"
 import { captionMarkdownImages, loadCaptionCache } from "@/lib/image-caption-pipeline"
 import type { MultimodalConfig } from "@/stores/wiki-store"
+import { GENERATION_WIKI_TYPES } from "@/lib/wiki-page-types"
 
 /**
  * Resolve the LLM config that the caption pipeline should use.
@@ -1127,7 +1128,7 @@ export function buildGenerationPrompt(
     "   write `related: [a, b]` with bare slugs.",
     "",
     "Required fields and types:",
-    "  • type     — one of: source | entity | concept | comparison | query | synthesis",
+    `  • type     — one of: ${GENERATION_WIKI_TYPES.join(" | ")}`,
     "  • title    — string (quote it if it contains a colon, e.g. `title: \"Foo: Bar\"`)",
     "  • created  — date in YYYY-MM-DD form (no quotes)",
     "  • updated  — same as created",

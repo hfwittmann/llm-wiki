@@ -570,6 +570,9 @@
       "synthesis": "Synthesis",
       "overview": "Overview",
       "comparison": "Comparison",
+      "finding": "Finding",
+      "thesis": "Thesis",
+      "methodology": "Methodology",
       "other": "Other"
     }
   },
