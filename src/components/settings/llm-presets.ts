@@ -170,10 +170,18 @@ export const LLM_PRESETS: LlmPreset[] = [
     hint: "api.deepseek.com",
     provider: "custom",
     baseUrl: "https://api.deepseek.com/v1",
-    defaultModel: "deepseek-chat",
+    defaultModel: "deepseek-v4-flash",
     apiMode: "chat_completions",
-    // hermes models.py:243-246
-    suggestedModels: ["deepseek-chat", "deepseek-reasoner"],
+    // `deepseek-chat` and `deepseek-reasoner` remain selectable for
+    // existing users, but DeepSeek has announced deprecation on
+    // 2026-07-24. Keep chip values as exact model ids so clicking a
+    // suggestion can be copied directly into the request body.
+    suggestedModels: [
+      "deepseek-v4-flash",
+      "deepseek-v4-pro",
+      "deepseek-chat",
+      "deepseek-reasoner",
+    ],
     suggestedContextSize: 64000,
   },
   {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { LLM_PRESETS } from "./llm-presets"
 import { resolveConfig } from "./preset-resolver"
 import type { LlmConfig } from "@/stores/wiki-store"
 import type { LlmPreset } from "./llm-presets"
@@ -17,6 +18,18 @@ function fallbackConfig(overrides: Partial<LlmConfig> = {}): LlmConfig {
 }
 
 describe("resolveConfig", () => {
+  it("keeps DeepSeek presets aligned with the current V4 model list", () => {
+    const deepseek = LLM_PRESETS.find((preset) => preset.id === "deepseek")
+
+    expect(deepseek?.defaultModel).toBe("deepseek-v4-flash")
+    expect(deepseek?.suggestedModels).toEqual([
+      "deepseek-v4-flash",
+      "deepseek-v4-pro",
+      "deepseek-chat",
+      "deepseek-reasoner",
+    ])
+  })
+
   it("defaults reasoning to auto instead of inheriting another preset's fallback", () => {
     const preset: LlmPreset = {
       id: "deepseek",
