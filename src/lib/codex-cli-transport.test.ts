@@ -239,6 +239,49 @@ describe("streamCodexCli", () => {
     expect(callbacks.onError).not.toHaveBeenCalled()
   })
 
+  it("surfaces a clear error when completion has no agent message", async () => {
+    const callbacks = {
+      onToken: vi.fn(),
+      onDone: vi.fn(),
+      onError: vi.fn(),
+    }
+
+    const stream = streamCodexCli(
+      {
+        provider: "codex-cli",
+        apiKey: "",
+        model: "gpt-5.1-codex-mini",
+        ollamaUrl: "",
+        customEndpoint: "",
+        maxContextSize: 128000,
+      },
+      [{ role: "user", content: "Analyze this source." }],
+      callbacks,
+    )
+
+    await vi.waitFor(() => {
+      expect(tauriMocks.invoke).toHaveBeenCalledTimes(1)
+    })
+
+    const payload = tauriMocks.invoke.mock.calls[0]?.[1] as { streamId: string }
+    tauriMocks.emit(`codex-cli:${payload.streamId}:done`, {
+      code: 0,
+      stderr: "",
+      stdout: JSON.stringify({ type: "turn.completed" }),
+    })
+
+    await stream
+
+    expect(callbacks.onToken).not.toHaveBeenCalled()
+    expect(callbacks.onDone).not.toHaveBeenCalled()
+    expect(callbacks.onError).toHaveBeenCalledTimes(1)
+    expect(callbacks.onError.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining("completed but did not emit an agent_message"),
+      }),
+    )
+  })
+
   it("does not spawn when the signal is already aborted", async () => {
     const controller = new AbortController()
     controller.abort()
