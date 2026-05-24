@@ -1,7 +1,14 @@
 export const AZURE_OPENAI_API_VERSION = "2024-10-21"
 
 export function isAzureOpenAiEndpoint(endpoint: string): boolean {
-  return /\.openai\.azure\.com/i.test(endpoint)
+  const trimmed = endpoint.trim()
+  if (!trimmed) return false
+  try {
+    const url = new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`)
+    return url.hostname.toLowerCase().endsWith(".openai.azure.com")
+  } catch {
+    return /(^|\/\/)[^/?#]+\.openai\.azure\.com(?::\d+)?(?:[/?#]|$)/i.test(trimmed)
+  }
 }
 
 export interface AzureParsedEndpoint {

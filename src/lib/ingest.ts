@@ -42,6 +42,8 @@ function resolveCaptionConfig(
     model: mm.model,
     ollamaUrl: mm.ollamaUrl,
     customEndpoint: mm.customEndpoint,
+    azureApiVersion: mm.azureApiVersion,
+    azureModelFamily: mm.azureModelFamily,
     apiMode: mm.apiMode,
     // The caption helper hits `streamChat` directly, which doesn't
     // care about `maxContextSize` (that field is for the analysis

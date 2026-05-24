@@ -53,6 +53,7 @@ export function resolveConfig(
       ollamaUrl: fallback.ollamaUrl,
       customEndpoint: ov.baseUrl ?? preset.baseUrl ?? "",
       azureApiVersion: ov.azureApiVersion ?? preset.azureApiVersion ?? AZURE_OPENAI_API_VERSION,
+      azureModelFamily: ov.azureModelFamily ?? preset.azureModelFamily ?? "auto",
       maxContextSize,
       reasoning,
     }

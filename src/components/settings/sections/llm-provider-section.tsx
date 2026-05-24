@@ -125,10 +125,11 @@ function PresetRow({
   const apiMode = ov.apiMode ?? preset.apiMode ?? "chat_completions"
   const baseUrl = ov.baseUrl ?? preset.baseUrl ?? ""
   const azureApiVersion = ov.azureApiVersion ?? preset.azureApiVersion ?? AZURE_OPENAI_API_VERSION
+  const azureModelFamily = ov.azureModelFamily ?? preset.azureModelFamily ?? "auto"
   const context = ov.maxContextSize ?? preset.suggestedContextSize ?? 131072
   const reasoning = ov.reasoning ?? { mode: "auto" as const }
   const [testState, setTestState] = useState<ProviderTestState>({ kind: "idle" })
-  const hasConfig = !!apiKey || !!ov.baseUrl || !!ov.model || !!ov.azureApiVersion
+  const hasConfig = !!apiKey || !!ov.baseUrl || !!ov.model || !!ov.azureApiVersion || !!ov.azureModelFamily
   // Local CLI providers authenticate via their own existing login state
   // (inherited by the spawned subprocess), so no API key field is shown.
   // Ollama ditto for its local-only model.
@@ -139,7 +140,7 @@ function PresetRow({
 
   const resolvedConfig = useMemo(
     () => resolveConfig(preset, ov, useWikiStore.getState().llmConfig),
-    [apiKey, apiMode, azureApiVersion, baseUrl, context, model, preset, reasoning, ov],
+    [apiKey, apiMode, azureApiVersion, azureModelFamily, baseUrl, context, model, preset, reasoning, ov],
   )
 
   async function runProviderTest(kind: "connection" | "function") {
@@ -277,16 +278,32 @@ function PresetRow({
           )}
 
           {preset.provider === "azure" && (
-            <div className="space-y-2">
-              <Label>Azure API version</Label>
-              <Input
-                value={azureApiVersion}
-                onChange={(e) => onChange({ azureApiVersion: e.target.value })}
-                placeholder="2024-10-21"
-              />
-              <p className="text-xs text-muted-foreground">
-                Sent as the Azure OpenAI <code className="font-mono">api-version</code> query parameter.
-              </p>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>{t("settings.sections.llm.azureApiVersion")}</Label>
+                <Input
+                  value={azureApiVersion}
+                  onChange={(e) => onChange({ azureApiVersion: e.target.value })}
+                  placeholder="2024-10-21"
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t("settings.sections.llm.azureApiVersionHint")}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>{t("settings.sections.llm.azureModelFamily")}</Label>
+                <select
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  value={azureModelFamily}
+                  onChange={(e) => onChange({ azureModelFamily: e.target.value as typeof azureModelFamily })}
+                >
+                  <option value="auto">{t("settings.sections.llm.azureModelFamilyAuto")}</option>
+                  <option value="gpt5">{t("settings.sections.llm.azureModelFamilyGpt5")}</option>
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  {t("settings.sections.llm.azureModelFamilyHint")}
+                </p>
+              </div>
             </div>
           )}
 

@@ -193,6 +193,40 @@ describe("Azure OpenAI provider", () => {
 
     expect(body.temperature).toBeUndefined()
   })
+
+  it("uses explicit Azure model family when deployment name does not reveal GPT-5", () => {
+    const cfg = getProviderConfig(mkConfig({
+      provider: "azure",
+      model: "production-chat-deployment",
+      customEndpoint: "https://example-resource.openai.azure.com",
+      azureModelFamily: "gpt5",
+    }))
+    const body = cfg.buildBody(
+      [{ role: "user", content: "hi" }],
+      { max_tokens: 1024, temperature: 0.1 },
+    ) as Record<string, unknown>
+
+    expect(body.max_tokens).toBeUndefined()
+    expect(body.max_completion_tokens).toBe(1024)
+    expect(body.temperature).toBeUndefined()
+  })
+
+  it("applies explicit Azure model family to custom Azure endpoints", () => {
+    const cfg = getProviderConfig(mkConfig({
+      provider: "custom",
+      model: "wiki-main",
+      customEndpoint: "https://example-resource.openai.azure.com",
+      azureModelFamily: "gpt5",
+    }))
+    const body = cfg.buildBody(
+      [{ role: "user", content: "hi" }],
+      { max_tokens: 512, temperature: 0.1 },
+    ) as Record<string, unknown>
+
+    expect(body.model).toBeUndefined()
+    expect(body.max_completion_tokens).toBe(512)
+    expect(body.temperature).toBeUndefined()
+  })
 })
 
 describe("Ollama / custom (chat_completions) — vision content", () => {

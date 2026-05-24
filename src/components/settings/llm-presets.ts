@@ -1,3 +1,5 @@
+import type { AzureModelFamily } from "@/stores/wiki-store"
+
 /**
  * Curated LLM provider presets.
  *
@@ -42,6 +44,8 @@ export interface LlmPreset {
   defaultModel?: string
   /** Azure OpenAI api-version query parameter. Azure deployments vary by resource. */
   azureApiVersion?: string
+  /** Azure deployment names are arbitrary, so users can declare GPT-5/o-series behavior explicitly. */
+  azureModelFamily?: AzureModelFamily
   /**
    * Curated list of model ids the UI shows as clickable chips above the
    * Model input. The user can still type a custom value — the input stays

@@ -50,4 +50,24 @@ describe("resolveConfig", () => {
 
     expect(resolved.reasoning).toEqual({ mode: "off" })
   })
+
+  it("carries Azure API version and model family overrides", () => {
+    const preset: LlmPreset = {
+      id: "azure",
+      label: "Azure OpenAI",
+      provider: "azure",
+      baseUrl: "https://resource.openai.azure.com",
+      defaultModel: "wiki-main",
+      azureApiVersion: "2024-10-21",
+    }
+
+    const resolved = resolveConfig(
+      preset,
+      { azureApiVersion: "2025-01-01-preview", azureModelFamily: "gpt5" },
+      fallbackConfig(),
+    )
+
+    expect(resolved.azureApiVersion).toBe("2025-01-01-preview")
+    expect(resolved.azureModelFamily).toBe("gpt5")
+  })
 })

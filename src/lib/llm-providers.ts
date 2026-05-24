@@ -251,6 +251,11 @@ function isKimiEndpoint(config: LlmConfig): boolean {
 }
 
 function isOpenAiStrictCompletionModel(config: LlmConfig): boolean {
+  if ((config.provider === "azure" || (config.provider === "custom" && isAzureOpenAiEndpoint(config.customEndpoint)))
+    && config.azureModelFamily === "gpt5") {
+    return true
+  }
+
   const model = config.model.trim().toLowerCase()
   const strictModel =
     /^gpt-5(?:[.\-_]|$)/.test(model) || /^o\d+(?:[.\-_]|$)/.test(model)

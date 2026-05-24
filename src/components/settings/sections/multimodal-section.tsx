@@ -206,19 +206,32 @@ export function MultimodalSection({ draft, setDraft }: Props) {
               )}
 
               {draft.multimodalProvider === "azure" && (
-                <div className="space-y-2">
-                  <Label>{t("settings.sections.multimodal.azureApiVersion", "Azure API version")}</Label>
-                  <Input
-                    value={draft.multimodalAzureApiVersion}
-                    onChange={(e) => setDraft("multimodalAzureApiVersion", e.target.value)}
-                    placeholder="2024-10-21"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {t(
-                      "settings.sections.multimodal.azureApiVersionHint",
-                      "Sent as the Azure OpenAI api-version query parameter.",
-                    )}
-                  </p>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>{t("settings.sections.multimodal.azureApiVersion")}</Label>
+                    <Input
+                      value={draft.multimodalAzureApiVersion}
+                      onChange={(e) => setDraft("multimodalAzureApiVersion", e.target.value)}
+                      placeholder="2024-10-21"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {t("settings.sections.multimodal.azureApiVersionHint")}
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t("settings.sections.multimodal.azureModelFamily")}</Label>
+                    <select
+                      className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      value={draft.multimodalAzureModelFamily}
+                      onChange={(e) => setDraft("multimodalAzureModelFamily", e.target.value as typeof draft.multimodalAzureModelFamily)}
+                    >
+                      <option value="auto">{t("settings.sections.multimodal.azureModelFamilyAuto")}</option>
+                      <option value="gpt5">{t("settings.sections.multimodal.azureModelFamilyGpt5")}</option>
+                    </select>
+                    <p className="text-xs text-muted-foreground">
+                      {t("settings.sections.multimodal.azureModelFamilyHint")}
+                    </p>
+                  </div>
                 </div>
               )}
 

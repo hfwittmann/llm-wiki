@@ -1,5 +1,5 @@
 import type { CustomApiMode } from "./llm-presets"
-import type { ReasoningConfig, SourceWatchConfig } from "@/stores/wiki-store"
+import type { AzureModelFamily, ReasoningConfig, SourceWatchConfig } from "@/stores/wiki-store"
 
 /**
  * Shape of the draft state each section reads from and writes into.
@@ -15,6 +15,7 @@ export interface SettingsDraft {
   ollamaUrl: string
   customEndpoint: string
   azureApiVersion: string
+  azureModelFamily: AzureModelFamily
   maxContextSize: number
   apiMode: CustomApiMode | undefined
   reasoning: ReasoningConfig | undefined
@@ -40,6 +41,7 @@ export interface SettingsDraft {
   multimodalOllamaUrl: string
   multimodalCustomEndpoint: string
   multimodalAzureApiVersion: string
+  multimodalAzureModelFamily: AzureModelFamily
   multimodalApiMode: CustomApiMode | undefined
   multimodalConcurrency: number
 

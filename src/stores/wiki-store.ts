@@ -9,6 +9,7 @@ import { DEFAULT_SOURCE_WATCH_CONFIG } from "@/lib/source-watch-config"
  * `chat_completions` for backward compatibility with pre-0.3.7 configs.
  */
 export type CustomApiMode = "chat_completions" | "anthropic_messages"
+export type AzureModelFamily = "auto" | "gpt5"
 export type ReasoningMode = "auto" | "off" | "low" | "medium" | "high" | "max" | "custom"
 
 export interface ReasoningConfig {
@@ -23,6 +24,7 @@ interface LlmConfig {
   ollamaUrl: string
   customEndpoint: string
   azureApiVersion?: string
+  azureModelFamily?: AzureModelFamily
   maxContextSize: number // max context window in characters
   apiMode?: CustomApiMode
   reasoning?: ReasoningConfig
@@ -186,6 +188,7 @@ interface MultimodalConfig {
   ollamaUrl: string
   customEndpoint: string
   azureApiVersion?: string
+  azureModelFamily?: AzureModelFamily
   apiMode?: CustomApiMode
   /** Max parallel caption requests during ingest. >=1. */
   concurrency: number
@@ -231,6 +234,7 @@ export interface ProviderOverride {
   model?: string
   baseUrl?: string           // customEndpoint for custom presets, ollamaUrl for ollama
   azureApiVersion?: string
+  azureModelFamily?: AzureModelFamily
   apiMode?: CustomApiMode
   maxContextSize?: number
   reasoning?: ReasoningConfig

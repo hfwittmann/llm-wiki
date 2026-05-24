@@ -109,6 +109,7 @@ function initialDraft(
     ollamaUrl: llm.ollamaUrl,
     customEndpoint: llm.customEndpoint,
     azureApiVersion: llm.azureApiVersion ?? "2024-10-21",
+    azureModelFamily: llm.azureModelFamily ?? "auto",
     maxContextSize: llm.maxContextSize ?? 204800,
     apiMode: llm.apiMode,
     reasoning: llm.reasoning,
@@ -127,6 +128,7 @@ function initialDraft(
     multimodalOllamaUrl: multimodal.ollamaUrl,
     multimodalCustomEndpoint: multimodal.customEndpoint,
     multimodalAzureApiVersion: multimodal.azureApiVersion ?? "2024-10-21",
+    multimodalAzureModelFamily: multimodal.azureModelFamily ?? "auto",
     multimodalApiMode: multimodal.apiMode,
     multimodalConcurrency: multimodal.concurrency,
     outputLanguage,
@@ -272,6 +274,7 @@ export function SettingsView() {
       ollamaUrl: draft.ollamaUrl,
       customEndpoint: draft.customEndpoint,
       azureApiVersion: draft.provider === "azure" ? draft.azureApiVersion.trim() : undefined,
+      azureModelFamily: draft.provider === "azure" ? draft.azureModelFamily : undefined,
       maxContextSize: draft.maxContextSize,
       apiMode: draft.provider === "custom" ? draft.apiMode : undefined,
       reasoning: draft.reasoning,
@@ -294,6 +297,7 @@ export function SettingsView() {
       ollamaUrl: draft.multimodalOllamaUrl,
       customEndpoint: draft.multimodalCustomEndpoint,
       azureApiVersion: draft.multimodalProvider === "azure" ? draft.multimodalAzureApiVersion.trim() : undefined,
+      azureModelFamily: draft.multimodalProvider === "azure" ? draft.multimodalAzureModelFamily : undefined,
       apiMode: draft.multimodalProvider === "custom" ? draft.multimodalApiMode : undefined,
       // Clamp at save time so a hand-edited persisted store with a
       // ridiculous concurrency value (e.g. someone setting 1000 in
