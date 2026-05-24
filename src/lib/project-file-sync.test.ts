@@ -370,6 +370,46 @@ describe("project file sync", () => {
     ])
   })
 
+  it("does not suppress a retried file-change task that reuses the same id", async () => {
+    vi.useFakeTimers()
+    const { startProjectFileSync } = await import("@/lib/project-file-sync")
+    const { useWikiStore } = await import("@/stores/wiki-store")
+
+    const project = { id: "A", name: "A", path: "/tmp/a" }
+    useWikiStore.getState().setProject(project)
+    void startProjectFileSync(project)
+
+    await vi.waitFor(() => {
+      expect(mocks.listen).toHaveBeenCalledTimes(2)
+    })
+
+    const baseTask = {
+      id: "retryable-task",
+      projectId: "A",
+      path: "raw/sources/retry.pdf",
+      kind: "modified" as const,
+      status: "done" as const,
+      createdAt: 1,
+      retryCount: 0,
+      needsRerun: false,
+    }
+
+    mocks.emit("file-sync://changed", {
+      projectId: "A",
+      tasks: [{ ...baseTask, updatedAt: 1 }],
+    })
+    await vi.advanceTimersByTimeAsync(300)
+    expect(mocks.enqueueBatch).toHaveBeenCalledTimes(1)
+
+    mocks.emit("file-sync://changed", {
+      projectId: "A",
+      tasks: [{ ...baseTask, updatedAt: 2 }],
+    })
+    await vi.advanceTimersByTimeAsync(300)
+
+    expect(mocks.enqueueBatch).toHaveBeenCalledTimes(2)
+  })
+
   it("manual rescan uses returned changed tasks while the watcher is running", async () => {
     const { startProjectFileSync, rescanProjectFileSync } = await import("@/lib/project-file-sync")
     const { useWikiStore } = await import("@/stores/wiki-store")

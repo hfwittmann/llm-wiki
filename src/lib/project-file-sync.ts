@@ -159,7 +159,10 @@ function mergeChangeTasks(tasks: FileChangeTask[]): FileChangeTask[] {
 }
 
 function changeTaskKey(task: FileChangeTask): string {
-  return task.id || `${task.projectId}:${task.path}:${task.kind}`
+  const version = task.updatedAt ?? task.createdAt ?? 0
+  return task.id
+    ? `${task.id}:${version}`
+    : `${task.projectId}:${task.path}:${task.kind}:${version}`
 }
 
 async function processFileChangeBatch(
@@ -169,6 +172,9 @@ async function processFileChangeBatch(
 ): Promise<void> {
   for (const task of tasks) {
     handledChangeTaskKeys.add(changeTaskKey(task))
+  }
+  if (handledChangeTaskKeys.size > 4096) {
+    handledChangeTaskKeys = new Set([...handledChangeTaskKeys].slice(-2048))
   }
   await cleanupDeletedFiles(project, tasks)
   await enqueueRawSourceChanges(project, tasks)
