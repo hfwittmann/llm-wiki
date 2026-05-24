@@ -7,25 +7,29 @@ export function sourceIdentityForPath(projectPath: string, sourcePath: string): 
   const pp = normalizePath(projectPath).replace(/\/+$/, "")
   const sp = normalizePath(sourcePath)
   const projectRawSourcesPrefix = `${pp}/${RAW_SOURCES_PREFIX}`
-  if (sp.startsWith(projectRawSourcesPrefix)) {
+  const spKey = sp.toLowerCase()
+  if (spKey.startsWith(projectRawSourcesPrefix.toLowerCase())) {
     return sp.slice(projectRawSourcesPrefix.length)
   }
-  if (sp.startsWith(RAW_SOURCES_PREFIX)) {
+  if (spKey.startsWith(RAW_SOURCES_PREFIX)) {
     return sp.slice(RAW_SOURCES_PREFIX.length)
   }
-  if (sp.includes(RAW_SOURCES_MARKER)) {
-    return sp.slice(sp.indexOf(RAW_SOURCES_MARKER) + RAW_SOURCES_MARKER.length)
+  const markerIndex = spKey.indexOf(RAW_SOURCES_MARKER)
+  if (markerIndex >= 0) {
+    return sp.slice(markerIndex + RAW_SOURCES_MARKER.length)
   }
   return getFileName(sp)
 }
 
 export function sourceReferenceIdentity(sourceReference: string): string {
   const ref = normalizePath(sourceReference)
-  if (ref.startsWith(RAW_SOURCES_PREFIX)) {
+  const refKey = ref.toLowerCase()
+  if (refKey.startsWith(RAW_SOURCES_PREFIX)) {
     return ref.slice(RAW_SOURCES_PREFIX.length)
   }
-  if (ref.includes(RAW_SOURCES_MARKER)) {
-    return ref.slice(ref.indexOf(RAW_SOURCES_MARKER) + RAW_SOURCES_MARKER.length)
+  const markerIndex = refKey.indexOf(RAW_SOURCES_MARKER)
+  if (markerIndex >= 0) {
+    return ref.slice(markerIndex + RAW_SOURCES_MARKER.length)
   }
   return ref
 }

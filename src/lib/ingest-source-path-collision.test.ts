@@ -168,6 +168,43 @@ describe("autoIngest source summary paths", () => {
     expect(allSummaries).toContain("project-b/config.yaml")
   })
 
+  it("migrates a safe legacy basename source summary to the canonical nested source path", async () => {
+    if (!tmp) throw new Error("missing temp project")
+    sourceMarkers = ["project-a config"]
+    await fs.rm(path.join(tmp.path, "raw", "sources", "project-b", "config.yaml"))
+
+    const legacySummaryPath = path.join(tmp.path, "wiki", "sources", "config.md")
+    await writeFileRaw(
+      legacySummaryPath,
+      [
+        "---",
+        'title: "Source: config.yaml"',
+        'sources: ["config.yaml"]',
+        "---",
+        "",
+        "# Legacy config",
+        "",
+        "Legacy source summary body.",
+      ].join("\n"),
+    )
+
+    await autoIngest(
+      tmp.path,
+      `${tmp.path}/raw/sources/project-a/config.yaml`,
+      useWikiStore.getState().llmConfig,
+      undefined,
+      "project-a",
+    )
+
+    const canonicalSummary = `wiki/sources/${sourceSummarySlugFromIdentity("project-a/config.yaml")}.md`
+    const canonicalSummaryPath = path.join(tmp.path, canonicalSummary)
+    const content = await fs.readFile(canonicalSummaryPath, "utf8")
+
+    await expect(fs.access(legacySummaryPath)).rejects.toThrow()
+    expect(content).toContain('sources: ["project-a/config.yaml"]')
+    expect(content).toContain("project-a config")
+  })
+
   it("canonicalizes interactive source summary paths and sources frontmatter", async () => {
     if (!tmp) throw new Error("missing temp project")
 

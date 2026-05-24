@@ -1,4 +1,4 @@
-import { readFile, writeFile, listDirectory } from "@/commands/fs"
+import { deleteFile, fileExists, readFile, writeFile, listDirectory } from "@/commands/fs"
 import { streamChat } from "@/lib/llm-client"
 import type { LlmConfig } from "@/stores/wiki-store"
 import { useWikiStore } from "@/stores/wiki-store"
@@ -15,6 +15,7 @@ import { checkIngestCache, saveIngestCache } from "@/lib/ingest-cache"
 import { sanitizeIngestedFileContent } from "@/lib/ingest-sanitize"
 import { mergePageContent, type MergeFn } from "@/lib/page-merge"
 import { withProjectLock } from "@/lib/project-mutex"
+import type { FileNode } from "@/types/wiki"
 import {
   extractAndSaveSourceImages,
   buildImageMarkdownSection,
@@ -628,6 +629,7 @@ async function autoIngestImpl(
 
   // ── Step 3: Write files ───────────────────────────────────────
   activity.updateItem(activityId, { detail: "Writing files..." })
+  await migrateLegacySourceSummaryIfSafe(pp, sourceIdentity, sourceSummaryPath)
   const { writtenPaths, warnings: writeWarnings, hardFailures } = await writeFileBlocks(
     pp,
     generation,
@@ -834,6 +836,101 @@ function canonicalizeSourcesField(content: string, sourceIdentity: string): stri
   })
 
   return writeSources(content, deduped)
+}
+
+async function migrateLegacySourceSummaryIfSafe(
+  projectPath: string,
+  sourceIdentity: string,
+  sourceSummaryPath: string,
+): Promise<void> {
+  const normalizedIdentity = normalizePath(sourceIdentity)
+  if (!normalizedIdentity.includes("/")) return
+
+  const basename = getFileName(normalizedIdentity)
+  const legacySlug = basename.replace(/\.[^.]+$/, "")
+  const legacyPath = `wiki/sources/${legacySlug}.md`
+  if (legacyPath === sourceSummaryPath) return
+
+  const pp = normalizePath(projectPath)
+  const legacyFullPath = `${pp}/${legacyPath}`
+  const canonicalFullPath = `${pp}/${sourceSummaryPath}`
+
+  const matchingIdentities = await matchingRawSourceIdentitiesForBasename(pp, basename)
+  const normalizedIdentityKey = normalizedIdentity.toLowerCase()
+  if (
+    matchingIdentities.length !== 1 ||
+    normalizePath(matchingIdentities[0]).toLowerCase() !== normalizedIdentityKey
+  ) {
+    return
+  }
+
+  try {
+    if (await fileExists(canonicalFullPath)) return
+    if (await fileExists(`${pp}/raw/sources/${basename}`)) return
+  } catch {
+    return
+  }
+
+  const legacyContent = await tryReadFile(legacyFullPath)
+  if (!legacyContent) return
+
+  const sources = parseSources(legacyContent)
+  const basenameKey = basename.toLowerCase()
+  const legacyOnlyReferencesBasename =
+    sources.length > 0 &&
+    sources.every(
+      (source) =>
+        !normalizePath(source).includes("/") &&
+        getFileName(source).toLowerCase() === basenameKey,
+    )
+  if (!legacyOnlyReferencesBasename) return
+
+  try {
+    await writeFile(canonicalFullPath, canonicalizeSourcesField(legacyContent, sourceIdentity))
+    await deleteFile(legacyFullPath)
+  } catch (err) {
+    console.warn(
+      `[ingest] failed to migrate legacy source summary ${legacyPath} -> ${sourceSummaryPath}:`,
+      err instanceof Error ? err.message : err,
+    )
+  }
+}
+
+async function matchingRawSourceIdentitiesForBasename(
+  projectPath: string,
+  basename: string,
+): Promise<string[]> {
+  const rawRoot = `${projectPath}/raw/sources`
+  let nodes: FileNode[]
+  try {
+    nodes = await listDirectory(rawRoot)
+  } catch {
+    return []
+  }
+
+  const rootPrefix = `${normalizePath(rawRoot).replace(/\/+$/, "")}/`
+  const rootPrefixKey = rootPrefix.toLowerCase()
+  const basenameKey = basename.toLowerCase()
+  const matches: string[] = []
+
+  const visit = (items: FileNode[]) => {
+    for (const item of items) {
+      if (item.is_dir) {
+        if (item.children) visit(item.children)
+        continue
+      }
+      const normalizedPath = normalizePath(item.path)
+      if (
+        getFileName(normalizedPath).toLowerCase() === basenameKey &&
+        normalizedPath.toLowerCase().startsWith(rootPrefixKey)
+      ) {
+        matches.push(normalizedPath.slice(rootPrefix.length))
+      }
+    }
+  }
+
+  visit(nodes)
+  return matches
 }
 
 async function writeFileBlocks(

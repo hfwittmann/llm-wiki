@@ -21,6 +21,18 @@ describe("source identity helpers", () => {
     )
   })
 
+  it("matches raw/sources prefixes case-insensitively while preserving returned case", () => {
+    expect(
+      sourceIdentityForPath(
+        "C:/Users/Me/Wiki",
+        "c:/users/me/wiki/raw/sources/Project-A/Config.yaml",
+      ),
+    ).toBe("Project-A/Config.yaml")
+    expect(sourceReferenceIdentity("RAW/SOURCES/Project-A/Config.yaml")).toBe(
+      "Project-A/Config.yaml",
+    )
+  })
+
   it("keeps legacy basename slugs for root-level sources", () => {
     expect(sourceSummarySlugFromIdentity("config.yaml")).toBe("config")
   })
