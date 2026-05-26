@@ -11,6 +11,7 @@ import { sourceSummarySlugFromIdentity } from "./source-identity"
 vi.mock("@/commands/fs", () => realFs)
 
 let sourceMarkers: string[] = []
+let failLongChunksOnce = new Set<number>()
 
 vi.mock("./llm-client", () => ({
   streamChat: vi.fn(async (_cfg, messages, cb) => {
@@ -39,6 +40,26 @@ vi.mock("./llm-client", () => ({
         "",
         "Configuration source generated from the chat handoff.",
         "---END FILE---",
+      ].join("\n"))
+      cb.onDone()
+      return
+    }
+
+    if (systemPrompt.startsWith("You are analyzing a long source document")) {
+      const chunkMatch = userPrompt.match(/Chunk:\s*(\d+)\/(\d+)/)
+      const chunkIndex = chunkMatch?.[1] ?? "0"
+      const numericChunkIndex = Number(chunkIndex)
+      if (failLongChunksOnce.has(numericChunkIndex)) {
+        failLongChunksOnce.delete(numericChunkIndex)
+        cb.onError(new Error(`chunk ${chunkIndex} failed once`))
+        return
+      }
+      cb.onToken([
+        "## Chunk Analysis",
+        `Chunk ${chunkIndex} introduced topic ${chunkIndex}.`,
+        "",
+        "## Updated Global Digest",
+        `Digest after chunk ${chunkIndex}: stable context ${chunkIndex}.`,
       ].join("\n"))
       cb.onDone()
       return
@@ -74,12 +95,17 @@ vi.mock("./llm-client", () => ({
 }))
 
 import { autoIngest, executeIngestWrites } from "./ingest"
+import { streamChat } from "./llm-client"
+
+const mockStreamChat = vi.mocked(streamChat)
 
 describe("autoIngest source summary paths", () => {
   let tmp: { path: string; cleanup: () => Promise<void> } | undefined
 
   beforeEach(async () => {
     sourceMarkers = []
+    failLongChunksOnce = new Set()
+    mockStreamChat.mockClear()
     tmp = await createTempProject("same-basename-sources")
 
     await writeFileRaw(`${tmp.path}/purpose.md`, "# Purpose\n\nTrack project config files.\n")
@@ -235,6 +261,114 @@ describe("autoIngest source summary paths", () => {
 
     expect(await fs.readFile(legacySummaryPath, "utf8")).toBe(legacyContent)
     expect(await fs.readFile(canonicalSummaryPath, "utf8")).toContain("project-a config")
+  })
+
+  it("analyzes oversized sources in chunks before final wiki generation", async () => {
+    if (!tmp) throw new Error("missing temp project")
+    sourceMarkers = ["long source"]
+    const longSourcePath = `${tmp.path}/raw/sources/project-a/long-report.md`
+    await writeFileRaw(
+      longSourcePath,
+      [
+        "# Chapter One",
+        "",
+        "A".repeat(9000),
+        "",
+        "## Chapter Two",
+        "",
+        "B".repeat(9000),
+        "",
+        "## Chapter Three",
+        "",
+        "C".repeat(9000),
+      ].join("\n"),
+    )
+
+    await autoIngest(
+      tmp.path,
+      longSourcePath,
+      { ...useWikiStore.getState().llmConfig, maxContextSize: 20_000 },
+      undefined,
+      "project-a",
+    )
+
+    const chunkCalls = mockStreamChat.mock.calls.filter(([, messages]) =>
+      String(messages?.[0]?.content ?? "").startsWith("You are analyzing a long source document"),
+    )
+    expect(chunkCalls.length).toBeGreaterThan(1)
+    expect(String(chunkCalls[0][1]?.[1]?.content ?? "")).toContain("## MAIN CHUNK TO ANALYZE")
+    expect(String(chunkCalls[1][1]?.[1]?.content ?? "")).toContain(
+      "Digest after chunk 1: stable context 1.",
+    )
+    expect(String(chunkCalls[1][1]?.[1]?.content ?? "")).not.toContain(
+      "introduced topic 1",
+    )
+
+    const generationCall = mockStreamChat.mock.calls.find(([, messages]) =>
+      String(messages?.[0]?.content ?? "").includes("Based on the analysis provided, generate wiki files"),
+    )
+    expect(generationCall).toBeTruthy()
+    const generationPrompt = String(generationCall?.[1]?.[1]?.content ?? "")
+    expect(generationPrompt).toContain("Long Source Context")
+    expect(generationPrompt).toContain(
+      `Digest after chunk ${chunkCalls.length}: stable context ${chunkCalls.length}.`,
+    )
+    const finalDigestSection = generationPrompt
+      .split("## Source Context")[1]
+      ?.split("## Chunk Analysis Notes")[0] ?? ""
+    expect(finalDigestSection).toContain(
+      `Digest after chunk ${chunkCalls.length}: stable context ${chunkCalls.length}.`,
+    )
+    expect(finalDigestSection).not.toContain(
+      `Chunk ${chunkCalls.length} introduced topic ${chunkCalls.length}.`,
+    )
+  })
+
+  it("resumes oversized source analysis from the persisted chunk checkpoint", async () => {
+    if (!tmp) throw new Error("missing temp project")
+    sourceMarkers = ["long source"]
+    failLongChunksOnce = new Set([2])
+    const longSourcePath = `${tmp.path}/raw/sources/project-a/resume-report.md`
+    const llmConfig = { ...useWikiStore.getState().llmConfig, maxContextSize: 20_000 }
+    await writeFileRaw(
+      longSourcePath,
+      [
+        "# Chapter One",
+        "",
+        "A".repeat(9000),
+        "",
+        "## Chapter Two",
+        "",
+        "B".repeat(9000),
+        "",
+        "## Chapter Three",
+        "",
+        "C".repeat(9000),
+      ].join("\n"),
+    )
+
+    await expect(
+      autoIngest(tmp.path, longSourcePath, llmConfig, undefined, "project-a"),
+    ).rejects.toThrow("Chunk analysis stream failed")
+
+    const progressDir = path.join(tmp.path, ".llm-wiki", "ingest-progress")
+    expect((await fs.readdir(progressDir)).filter((name) => name.endsWith(".json"))).toHaveLength(1)
+
+    mockStreamChat.mockClear()
+    await autoIngest(tmp.path, longSourcePath, llmConfig, undefined, "project-a")
+
+    const resumedChunkCalls = mockStreamChat.mock.calls.filter(([, messages]) =>
+      String(messages?.[0]?.content ?? "").startsWith("You are analyzing a long source document"),
+    )
+    expect(resumedChunkCalls.length).toBeGreaterThan(0)
+    expect(String(resumedChunkCalls[0][1]?.[1]?.content ?? "")).toContain("Chunk: 2/3")
+    expect(String(resumedChunkCalls[0][1]?.[1]?.content ?? "")).toContain(
+      "Digest after chunk 1: stable context 1.",
+    )
+    expect(String(resumedChunkCalls[0][1]?.[1]?.content ?? "")).not.toContain(
+      "introduced topic 1",
+    )
+    await expect(fs.readdir(progressDir)).resolves.toEqual([])
   })
 
   it("canonicalizes interactive source summary paths and sources frontmatter", async () => {
