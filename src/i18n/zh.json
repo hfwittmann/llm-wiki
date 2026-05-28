@@ -31,7 +31,7 @@
   },
   "research": {
     "title": "深度研究",
-    "notConfigured": "深度研究信息来源尚未配置。请到设置 → 深度研究中配置网页搜索或 AnyTXT。",
+    "notConfigured": "深度研究信息来源尚未配置。请到设置 → 外部信息源中配置网页搜索或 AnyTXT。",
     "activeBadge": "{{running}} 个运行中{{queued, plural, =0 {} other {，{{queued}} 个排队中}}}",
     "inputPlaceholder": "输入研究主题...",
     "emptyTitle": "还没有研究任务",
@@ -134,7 +134,12 @@
     "msgCount": "条消息",
     "startNewConversation": "开始新对话",
     "clickNewChatToBegin": "点击「新建对话」开始",
-    "typeAMessage": "输入消息..."
+    "typeAMessage": "输入消息...",
+    "useWebSearch": "网页搜索",
+    "useAnyTxtSearch": "AnyTXT 搜索",
+    "enableAnyTxtInSettings": "请在设置 → 外部信息源中启用 AnyTXT",
+    "sendMessage": "发送消息",
+    "stopGeneration": "停止生成"
   },
   "search": {
     "title": "搜索",
@@ -203,7 +208,7 @@
       "llm": "LLM 模型",
       "embedding": "向量嵌入",
       "multimodal": "图片描述",
-      "webSearch": "深度研究",
+      "webSearch": "外部信息源",
       "network": "网络",
       "sourceWatch": "资料文件夹监控",
       "scheduledImport": "定时导入",
@@ -338,9 +343,9 @@
         "costPoint4": "批量 ingest 推荐用本地视觉模型（LM Studio / Ollama 跑 Qwen2.5-VL）；托管视觉 API 留给少量高价值文档。"
       },
       "webSearch": {
-        "title": "深度研究",
-        "description": "选择 Deep Research 在综合分析前从哪些来源收集上下文。",
-        "deepResearchSources": "研究信息来源",
+        "title": "外部信息源",
+        "description": "配置 LLM Wiki 可以使用的外部信息来源。",
+        "deepResearchSources": "深度研究来源模式",
         "deepResearchSourcesHint": "网页搜索使用当前选中的在线搜索 Provider。AnyTXT 会通过本机 ATGUI.exe 的本地索引搜索文件内容。",
         "sourceWeb": "网页搜索",
         "sourceAnyTxt": "AnyTXT",

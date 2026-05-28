@@ -31,7 +31,7 @@
   },
   "research": {
     "title": "Deep Research",
-    "notConfigured": "Deep Research sources are not configured. Go to Settings → Deep Research to configure Web Search or AnyTXT.",
+    "notConfigured": "Deep Research sources are not configured. Go to Settings → External Information Sources to configure Web Search or AnyTXT.",
     "activeBadge": "{{running}} active{{queued, plural, =0 {} other {, {{queued}} queued}}}",
     "inputPlaceholder": "Enter a research topic...",
     "emptyTitle": "No research tasks yet",
@@ -134,7 +134,12 @@
     "msgCount": "msgs",
     "startNewConversation": "Start a new conversation",
     "clickNewChatToBegin": "Click \"New Chat\" to begin",
-    "typeAMessage": "Type a message..."
+    "typeAMessage": "Type a message...",
+    "useWebSearch": "Web search",
+    "useAnyTxtSearch": "AnyTXT search",
+    "enableAnyTxtInSettings": "Enable AnyTXT in Settings → External Information Sources",
+    "sendMessage": "Send message",
+    "stopGeneration": "Stop generation"
   },
   "search": {
     "title": "Search",
@@ -203,7 +208,7 @@
       "llm": "LLM Models",
       "embedding": "Embeddings",
       "multimodal": "Image Captioning",
-      "webSearch": "Deep Research",
+      "webSearch": "External Information Sources",
       "network": "Network",
       "sourceWatch": "Source Watch",
       "scheduledImport": "Scheduled Import",
@@ -338,9 +343,9 @@
         "costPoint4": "Prefer a local vision model (Qwen2.5-VL via LM Studio / Ollama) for bulk ingestion; reserve hosted vision APIs for one-off high-stakes documents."
       },
       "webSearch": {
-        "title": "Deep Research",
-        "description": "Choose where Deep Research gathers context before synthesis.",
-        "deepResearchSources": "Research sources",
+        "title": "External Information Sources",
+        "description": "Configure external information sources that LLM Wiki can use.",
+        "deepResearchSources": "Deep Research source mode",
         "deepResearchSourcesHint": "Web Search uses the selected online provider. AnyTXT searches local indexed files through ATGUI.exe on this machine.",
         "sourceWeb": "Web Search",
         "sourceAnyTxt": "AnyTXT",
