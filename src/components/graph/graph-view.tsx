@@ -969,8 +969,6 @@ export function GraphView() {
                     labelSize: 13,
                     labelWeight: "bold",
                     labelColor: { color: "#1e293b" },
-                    labelDensity: labelDensity(searchedGraph.nodes.length),
-                    labelRenderedSizeThreshold: labelSizeThreshold(searchedGraph.nodes.length),
                     stagePadding: 30,
                   }}
                 >
