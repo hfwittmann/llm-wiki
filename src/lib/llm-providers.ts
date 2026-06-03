@@ -153,11 +153,12 @@ export function parseAnthropicLine(line: string): string | null {
     // of incremental content_block_delta chunks.
     if (
       parsed.type === "message" &&
-      Array.isArray(parsed.content) &&
-      parsed.content.length > 0 &&
-      typeof (parsed.content as Array<Record<string, unknown>>)[0].text === "string"
+      Array.isArray(parsed.content)
     ) {
-      return (parsed.content as Array<Record<string, unknown>>)[0].text as string
+      const text = (parsed.content as Array<Record<string, unknown>>)
+        .map((block) => typeof block.text === "string" ? block.text : "")
+        .join("")
+      return text.length > 0 ? text : null
     }
 
     // Fallback: misconfigured proxies occasionally return OpenAI-shaped

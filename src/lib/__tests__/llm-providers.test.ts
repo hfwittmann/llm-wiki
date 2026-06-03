@@ -128,6 +128,11 @@ describe("parseGoogleLine — Gemini SSE parsing", () => {
     expect(parseGoogleLine(line)).toBe("Hello")
   })
 
+  it("accepts SSE data lines without a space after the colon", () => {
+    const line = 'data:{"candidates":[{"content":{"parts":[{"text":"Hello"}]}}]}'
+    expect(parseGoogleLine(line)).toBe("Hello")
+  })
+
   it("concatenates text across multiple parts in one event", () => {
     // Gemini 2.5/3.x reasoning models sometimes split output across
     // multiple parts in a single streaming chunk. The old parser only
@@ -178,6 +183,12 @@ describe("parseAnthropicLine — Anthropic SSE parsing", () => {
     expect(parseAnthropicLine(line)).toBe("Hello world")
   })
 
+  it("concatenates all text blocks from a complete message event", () => {
+    const line =
+      'data: {"type":"message","id":"msg_01","role":"assistant","content":[{"type":"text","text":"Hello "},{"type":"tool_use","id":"tool_1"},{"type":"text","text":"world"}]}'
+    expect(parseAnthropicLine(line)).toBe("Hello world")
+  })
+
   it("falls back to OpenAI-shaped delta.content when present", () => {
     const line = 'data: {"choices":[{"delta":{"content":"fallback"}}]}'
     expect(parseAnthropicLine(line)).toBe("fallback")
@@ -191,6 +202,14 @@ describe("parseAnthropicLine — Anthropic SSE parsing", () => {
   it("returns null for non-data lines", () => {
     expect(parseAnthropicLine("event: start")).toBeNull()
     expect(parseAnthropicLine("")).toBeNull()
+  })
+})
+
+describe("parseOpenAiLine — OpenAI-compatible SSE parsing", () => {
+  it("accepts SSE data lines without a space after the colon", () => {
+    const cfg = getProviderConfig(makeConfig({ provider: "openai", model: "gpt-4.1" }))
+    const line = 'data:{"choices":[{"delta":{"content":"Hello"}}]}'
+    expect(cfg.parseStream(line)).toBe("Hello")
   })
 })
 
