@@ -9,7 +9,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js"
 import { LlmWikiApiClient, type ApiFileNode, type ApiGraphNode, type ApiSearchResult } from "./api-client.js"
 
-const VERSION = "0.4.18"
+const VERSION = "0.4.19"
 const DEFAULT_PROJECT_ID = "current"
 const MAX_TEXT_BYTES = 120_000
 

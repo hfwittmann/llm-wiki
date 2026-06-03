@@ -147,8 +147,12 @@
     }
 }
 
-.platform-macos body::before {
-  content: "";
+.macos-titlebar-drag-region {
+  display: none;
+}
+
+.platform-macos .macos-titlebar-drag-region {
+  display: block;
   position: fixed;
   z-index: 2147483647;
   top: 0;
@@ -157,6 +161,7 @@
   height: var(--window-titlebar-height);
   background: var(--background);
   -webkit-app-region: drag;
+  user-select: none;
 }
 
 /* Legend scrollbar - left side */

@@ -26,6 +26,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.4.19",
+    date: "2026-06-03",
+    highlights: {
+      en: [
+        "Fixed the macOS traffic-light titlebar drag area while keeping Windows and Linux on their native window controls.",
+      ],
+      zh: [
+        "修复 macOS 顶部红黄绿按钮区域无法拖动窗口的问题，同时保持 Windows 和 Linux 使用原生窗口控制。",
+      ],
+    },
+  },
+  {
     version: "0.4.18",
     date: "2026-06-03",
     highlights: {

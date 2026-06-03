@@ -17,6 +17,16 @@ import { WelcomeScreen } from "@/components/project/welcome-screen"
 import { CreateProjectDialog } from "@/components/project/create-project-dialog"
 import type { WikiProject } from "@/types/wiki"
 
+function MacTitlebarDragRegion() {
+  return (
+    <div
+      aria-hidden="true"
+      className="macos-titlebar-drag-region"
+      data-tauri-drag-region
+    />
+  )
+}
+
 function App() {
   const project = useWikiStore((s) => s.project)
   const setProject = useWikiStore((s) => s.setProject)
@@ -469,15 +479,19 @@ function App() {
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center bg-background text-muted-foreground">
-        Loading...
-      </div>
+      <>
+        <MacTitlebarDragRegion />
+        <div className="flex h-full items-center justify-center bg-background text-muted-foreground">
+          Loading...
+        </div>
+      </>
     )
   }
 
   if (!project) {
     return (
       <>
+        <MacTitlebarDragRegion />
         <WelcomeScreen
           onCreateProject={() => setShowCreateDialog(true)}
           onOpenProject={handleOpenProject}
@@ -494,6 +508,7 @@ function App() {
 
   return (
     <>
+      <MacTitlebarDragRegion />
       <AppLayout onSwitchProject={handleSwitchProject} />
       <CreateProjectDialog
         open={showCreateDialog}
