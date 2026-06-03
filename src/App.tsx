@@ -446,7 +446,7 @@ function App() {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background text-muted-foreground">
+      <div className="flex h-full items-center justify-center bg-background text-muted-foreground">
         Loading...
       </div>
     )

@@ -1,11 +1,12 @@
 import { useTranslation } from "react-i18next"
 import { Label } from "@/components/ui/label"
 import type { SettingsDraft, DraftSetter } from "../settings-types"
+import type { AppTheme } from "@/lib/theme"
 
 interface Props {
   draft: SettingsDraft
   setDraft: DraftSetter
-  onThemeChange?: (theme: "light" | "dark" | "system") => void
+  onThemeChange?: (theme: AppTheme) => void
 }
 
 const UI_LANGUAGES = [

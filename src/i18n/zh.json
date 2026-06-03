@@ -494,7 +494,7 @@
         "uiLanguage": "UI 语言",
         "uiLanguageHint": "只影响按钮、标签这些 UI 文案,不影响 AI 输出语言(那个在\"输出偏好\"里单独设置)。",
         "theme": "主题",
-        "themeHint": "选择浅色、深色或跟随系统主题。系统主题会跟随操作系统的外观设置。",
+        "themeHint": "预览会立即生效。保存设置后会记住所选主题。跟随系统会使用操作系统的外观设置。",
         "themeLight": "浅色",
         "themeDark": "深色",
         "themeSystem": "跟随系统"
