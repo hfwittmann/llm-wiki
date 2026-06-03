@@ -331,11 +331,13 @@ export const LLM_PRESETS: LlmPreset[] = [
     hint: "api.minimax.io/anthropic",
     provider: "custom",
     baseUrl: "https://api.minimax.io/anthropic",
-    defaultModel: "MiniMax-M2.7",
+    defaultModel: "MiniMax-M3",
     apiMode: "anthropic_messages",
-    // Current-gen only. M2 and M2.1 are legacy and being retired —
-    // users who need them can type the id into the custom input.
-    suggestedModels: ["MiniMax-M2.7", "MiniMax-M2.5"],
+    // M3 is the current-gen default; M2.7 stays as a fallback for users
+    // pinned to it. Older M2.5 / M2.1 / M2 are legacy and have been
+    // dropped — users who still need them can type the id into the
+    // custom input.
+    suggestedModels: ["MiniMax-M3", "MiniMax-M2.7"],
     suggestedContextSize: 200000,
   },
   {
@@ -344,9 +346,9 @@ export const LLM_PRESETS: LlmPreset[] = [
     hint: "api.minimaxi.com/anthropic",
     provider: "custom",
     baseUrl: "https://api.minimaxi.com/anthropic",
-    defaultModel: "MiniMax-M2.7",
+    defaultModel: "MiniMax-M3",
     apiMode: "anthropic_messages",
-    suggestedModels: ["MiniMax-M2.7", "MiniMax-M2.5"],
+    suggestedModels: ["MiniMax-M3", "MiniMax-M2.7"],
     suggestedContextSize: 200000,
   },
   {
