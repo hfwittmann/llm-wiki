@@ -26,6 +26,20 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.4.17",
+    date: "2026-06-03",
+    highlights: {
+      en: [
+        "Added a local MCP server for agent clients, using the same project, search, graph, and file APIs as the desktop app.",
+        "Updated Settings to manage API + MCP access together, including token guidance and a copyable MCP client configuration.",
+      ],
+      zh: [
+        "新增本地 MCP 服务，方便智能体客户端通过与桌面端一致的项目、搜索、图谱和文件接口访问 LLM Wiki。",
+        "设置中新增 API + MCP 管理入口，包含访问开关、token 提示和可复制的 MCP 客户端配置。",
+      ],
+    },
+  },
+  {
     version: "0.4.16",
     date: "2026-05-29",
     highlights: {

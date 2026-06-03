@@ -1,7 +1,7 @@
 {
   "name": "llm-wiki",
   "private": true,
-  "version": "0.4.16",
+  "version": "0.4.17",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,6 +11,8 @@
     "test": "npm run test:mocks && npm run test:llm",
     "test:mocks": "vitest run --exclude='**/*.real-llm.test.ts'",
     "test:llm": "vitest run real-llm --no-file-parallelism --reporter=verbose",
+    "mcp:build": "npm --prefix mcp-server run build",
+    "mcp:test": "npm --prefix mcp-server test",
     "tauri": "tauri"
   },
   "dependencies": {
