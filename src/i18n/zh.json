@@ -494,6 +494,7 @@
         "endpointProjectsNote": "列出所有已知项目及其 ID 和路径。",
         "endpointFilesNote": "?root=wiki|sources|all；?recursive=false；?maxFiles=N（≤10000）。",
         "endpointContentNote": "?path=wiki/index.md —— 仅文本文件，最大 2 MB。",
+        "endpointReviewsNote": "?status=unresolved|resolved|all；?type=missing-page；?limit=N。默认返回未解决的 Review 项。",
         "endpointSearchNote": "JSON body：{ query, topK?, includeContent?, queryEmbedding? }。配置嵌入后使用统一的关键词 + 向量检索。",
         "endpointGraphNote": "?q=…&nodeType=…&limit=N —— 基于 wiki/*.md 的双链图谱。",
         "endpointRescanNote": "使用你的资料文件夹监控配置触发后端重新扫描。",
