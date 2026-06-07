@@ -213,6 +213,7 @@
       "network": "网络",
       "sourceWatch": "资料文件夹监控",
       "scheduledImport": "定时导入",
+      "mineru": "MinerU PDF",
       "apiServer": "API + MCP",
       "output": "输出偏好",
       "interface": "界面",
@@ -574,6 +575,21 @@
         "later": "稍后",
         "autoCheck": "应用启动时自动检查更新（每 6 小时最多一次）",
         "appDescription": "一个由 LLM 驱动的个人知识库。源代码："
+      },
+      "mineru": {
+        "title": "MinerU PDF 解析",
+        "description": "使用 MinerU 云端 API 获得更高质量的 PDF 解析（表格、公式、复杂排版）。默认使用内置 pdfium 提取。",
+        "enabled": "启用 MinerU",
+        "token": "API Token",
+        "tokenHint": "从 mineru.net 获取您的 Token",
+        "model": "模型版本",
+        "modelVlm": "VLM（推荐，适合复杂排版）",
+        "modelPipeline": "Pipeline（更快）",
+        "modelHtml": "MinerU-HTML",
+        "test": "测试连接",
+        "testing": "测试中...",
+        "testSuccess": "连接成功",
+        "testFailed": "测试失败"
       }
     }
   },

@@ -14,6 +14,7 @@ import {
   FolderSync,
   Server,
   Settings,
+  FileText,
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { invoke } from "@tauri-apps/api/core"
@@ -36,6 +37,7 @@ import { InterfaceSection } from "./sections/interface-section"
 import { NetworkSection } from "./sections/network-section"
 import { ScheduledImportSection } from "./sections/scheduled-import-section"
 import { SourceWatchSection } from "./sections/source-watch-section"
+import { MineruSection } from "./sections/mineru-section"
 import { ApiServerSection } from "./sections/api-server-section"
 import { GeneralSection } from "./sections/general-section"
 import { ChangelogSection } from "./sections/changelog-section"
@@ -51,6 +53,7 @@ type CategoryId =
   | "network"
   | "source-watch"
   | "scheduled-import"
+  | "mineru"
   | "api-server"
   | "output"
   | "interface"
@@ -76,6 +79,7 @@ const CATEGORIES: Category[] = [
   { id: "network", labelKey: "settings.categories.network", icon: Network },
   { id: "source-watch", labelKey: "settings.categories.sourceWatch", icon: FolderSync },
   { id: "scheduled-import", labelKey: "settings.categories.scheduledImport", icon: Clock },
+  { id: "mineru", labelKey: "settings.categories.mineru", icon: FileText },
   { id: "api-server", labelKey: "settings.categories.apiServer", icon: Server },
   { id: "output", labelKey: "settings.categories.output", icon: Languages },
   { id: "interface", labelKey: "settings.categories.interface", icon: Palette },
@@ -92,6 +96,7 @@ function initialDraft(
   proxy: ReturnType<typeof useWikiStore.getState>["proxyConfig"],
   scheduledImport: ReturnType<typeof useWikiStore.getState>["scheduledImportConfig"],
   sourceWatch: ReturnType<typeof useWikiStore.getState>["sourceWatchConfig"],
+  mineru: ReturnType<typeof useWikiStore.getState>["mineruConfig"],
   apiConfig: ReturnType<typeof useWikiStore.getState>["apiConfig"],
   generalConfig: ReturnType<typeof useWikiStore.getState>["generalConfig"],
   maxHistoryMessages: number,
@@ -149,6 +154,9 @@ function initialDraft(
     scheduledImportPath: displayPath,
     scheduledImportInterval: scheduledImport.interval,
     sourceWatchConfig: normalizeSourceWatchConfig(sourceWatch),
+    mineruEnabled: mineru.enabled,
+    mineruToken: mineru.token,
+    mineruModelVersion: mineru.modelVersion,
     apiEnabled: apiConfig.enabled,
     apiAllowUnauthenticated: apiConfig.allowUnauthenticated,
     apiMcpEnabled: apiConfig.mcpEnabled,
@@ -177,6 +185,8 @@ export function SettingsView() {
   const setScheduledImportConfig = useWikiStore((s) => s.setScheduledImportConfig)
   const sourceWatchConfig = useWikiStore((s) => s.sourceWatchConfig)
   const setSourceWatchConfig = useWikiStore((s) => s.setSourceWatchConfig)
+  const mineruConfig = useWikiStore((s) => s.mineruConfig)
+  const setMineruConfig = useWikiStore((s) => s.setMineruConfig)
   const apiConfig = useWikiStore((s) => s.apiConfig)
   const setApiConfig = useWikiStore((s) => s.setApiConfig)
   const generalConfig = useWikiStore((s) => s.generalConfig)
@@ -205,6 +215,7 @@ export function SettingsView() {
       proxyConfig,
       scheduledImportConfig,
       sourceWatchConfig,
+      mineruConfig,
       apiConfig,
       generalConfig,
       maxHistoryMessages,
@@ -294,6 +305,7 @@ export function SettingsView() {
       saveProxyConfig,
       saveScheduledImportConfig,
       saveSourceWatchConfig,
+      saveMineruConfig,
       saveApiConfig,
       saveGeneralConfig,
     } = await import("@/lib/project-store")
@@ -402,6 +414,15 @@ export function SettingsView() {
 
     setMaxHistoryMessages(draft.maxHistoryMessages)
 
+    // ── MinerU: persist + push to store.
+    const newMineruConfig = {
+      enabled: draft.mineruEnabled,
+      token: draft.mineruToken.trim(),
+      modelVersion: draft.mineruModelVersion,
+    }
+    setMineruConfig(newMineruConfig)
+    await saveMineruConfig(newMineruConfig)
+
     // ── API server: persist + push to store. The Rust side reads
     // `apiConfig.{enabled,token,mcpEnabled}` from this same `app-state.json` on
     // every request via a 5s cache, so saved changes propagate
@@ -494,6 +515,8 @@ export function SettingsView() {
         return <SourceWatchSection draft={draft} setDraft={setDraft} projectReady={!!project} />
       case "scheduled-import":
         return <ScheduledImportSection draft={draft} setDraft={setDraft} />
+      case "mineru":
+        return <MineruSection draft={draft} setDraft={setDraft} />
       case "api-server":
         return <ApiServerSection draft={draft} setDraft={setDraft} />
       case "output":

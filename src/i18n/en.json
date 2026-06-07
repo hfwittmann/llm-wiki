@@ -213,6 +213,7 @@
       "network": "Network",
       "sourceWatch": "Source Watch",
       "scheduledImport": "Scheduled Import",
+      "mineru": "MinerU PDF",
       "apiServer": "API + MCP",
       "output": "Output",
       "interface": "Interface",
@@ -574,6 +575,21 @@
         "later": "Later",
         "autoCheck": "Check for updates automatically on startup (at most once every 6 hours)",
         "appDescription": "An LLM-driven personal knowledge base. Source:"
+      },
+      "mineru": {
+        "title": "MinerU PDF Parser",
+        "description": "Use MinerU cloud API for higher quality PDF parsing (tables, formulas, complex layouts). Default uses built-in pdfium extraction.",
+        "enabled": "Enable MinerU",
+        "token": "API Token",
+        "tokenHint": "Get your token from mineru.net",
+        "model": "Model Version",
+        "modelVlm": "VLM (Recommended, best for complex layouts)",
+        "modelPipeline": "Pipeline (Faster)",
+        "modelHtml": "MinerU-HTML",
+        "test": "Test Connection",
+        "testing": "Testing...",
+        "testSuccess": "Connection successful",
+        "testFailed": "Test failed"
       }
     }
   },

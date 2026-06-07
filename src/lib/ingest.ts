@@ -11,6 +11,7 @@ import {
 import { streamChat } from "@/lib/llm-client"
 import type { LlmConfig } from "@/stores/wiki-store"
 import { useWikiStore } from "@/stores/wiki-store"
+import { parseWithMineru } from "@/lib/mineru"
 import { useChatStore } from "@/stores/chat-store"
 import { useActivityStore } from "@/stores/activity-store"
 import { useReviewStore, type ReviewItem } from "@/stores/review-store"
@@ -476,6 +477,29 @@ async function autoIngestImpl(
     detail: "Reading source...",
     filesWritten: [],
   })
+
+  // ── MinerU preprocessing for PDF files ──
+  const lowerExt = fileName.includes(".") ? fileName.split(".").pop()?.toLowerCase() : ""
+  const isPdf = lowerExt === "pdf"
+  const mineruCfg = useWikiStore.getState().mineruConfig
+  if (isPdf && mineruCfg.enabled && mineruCfg.token) {
+    try {
+      const cacheDir = sp.substring(0, sp.lastIndexOf("/"))
+      const cachePath = `${cacheDir}/.cache/${fileName}.txt`
+      activity.updateItem(activityId, { detail: "MinerU: parsing PDF..." })
+      console.log(`[ingest:mineru] submitting "${fileName}" to MinerU API`)
+      const markdown = await parseWithMineru(mineruCfg, sp, undefined, (msg) => {
+        activity.updateItem(activityId, { detail: `MinerU: ${msg}` })
+      })
+      await createDirectory(`${cacheDir}/.cache`)
+      await writeFile(cachePath, markdown)
+      console.log(`[ingest:mineru] cached MinerU output for "${fileName}" (${markdown.length} chars)`)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.warn(`[ingest:mineru] MinerU parsing failed, falling back to pdfium: ${msg}`)
+    }
+    activity.updateItem(activityId, { detail: "Reading source..." })
+  }
 
   const [sourceContent, schema, purpose, index, overview] = await Promise.all([
     tryReadSourceTextFile(sp),
