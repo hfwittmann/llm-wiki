@@ -8,7 +8,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use tauri::{AppHandle, Manager};
 use tiny_http::{Header, Method, Response, Server, StatusCode};
 use walkdir::WalkDir;
@@ -1039,13 +1039,86 @@ fn load_review_items(project_path: &str, query: &ReviewQuery) -> Result<Vec<Valu
                 continue;
             }
         }
-        reviews.push(item.clone());
+        reviews.push(sanitize_review_item(item));
         if reviews.len() >= query.limit {
             break;
         }
     }
 
     Ok(reviews)
+}
+
+fn sanitize_review_item(item: &Value) -> Value {
+    let mut out = Map::new();
+    copy_string_field(item, &mut out, "id");
+    copy_string_field(item, &mut out, "type");
+    copy_string_field(item, &mut out, "title");
+    copy_string_field(item, &mut out, "description");
+    copy_string_field(item, &mut out, "sourcePath");
+    copy_string_array_field(item, &mut out, "affectedPages");
+    copy_string_array_field(item, &mut out, "searchQueries");
+    copy_review_options(item, &mut out);
+    copy_bool_field(item, &mut out, "resolved");
+    copy_string_field(item, &mut out, "resolvedAction");
+    copy_number_field(item, &mut out, "createdAt");
+    Value::Object(out)
+}
+
+fn copy_string_field(item: &Value, out: &mut Map<String, Value>, key: &str) {
+    if let Some(value) = item.get(key).and_then(Value::as_str) {
+        out.insert(key.to_string(), Value::String(value.to_string()));
+    }
+}
+
+fn copy_bool_field(item: &Value, out: &mut Map<String, Value>, key: &str) {
+    if let Some(value) = item.get(key).and_then(Value::as_bool) {
+        out.insert(key.to_string(), Value::Bool(value));
+    }
+}
+
+fn copy_number_field(item: &Value, out: &mut Map<String, Value>, key: &str) {
+    if let Some(value) = item.get(key).and_then(Value::as_f64) {
+        if value.is_finite() {
+            out.insert(key.to_string(), json!(value));
+        }
+    }
+}
+
+fn copy_string_array_field(item: &Value, out: &mut Map<String, Value>, key: &str) {
+    let Some(values) = item.get(key).and_then(Value::as_array) else {
+        return;
+    };
+    let strings = values
+        .iter()
+        .filter_map(Value::as_str)
+        .map(|value| Value::String(value.to_string()))
+        .collect::<Vec<_>>();
+    out.insert(key.to_string(), Value::Array(strings));
+}
+
+fn copy_review_options(item: &Value, out: &mut Map<String, Value>) {
+    let Some(values) = item.get("options").and_then(Value::as_array) else {
+        return;
+    };
+    let options = values
+        .iter()
+        .filter_map(|option| {
+            let option = option.as_object()?;
+            let mut sanitized = Map::new();
+            if let Some(label) = option.get("label").and_then(Value::as_str) {
+                sanitized.insert("label".to_string(), Value::String(label.to_string()));
+            }
+            if let Some(action) = option.get("action").and_then(Value::as_str) {
+                sanitized.insert("action".to_string(), Value::String(action.to_string()));
+            }
+            if sanitized.is_empty() {
+                None
+            } else {
+                Some(Value::Object(sanitized))
+            }
+        })
+        .collect::<Vec<_>>();
+    out.insert("options".to_string(), Value::Array(options));
 }
 
 fn handle_reviews(app: &AppHandle, project_id: &str, query: &str) -> ApiResponse {
@@ -1414,7 +1487,8 @@ mod tests {
                     "description": "Add Attention",
                     "options": [],
                     "resolved": false,
-                    "createdAt": 1
+                    "createdAt": 1,
+                    "internalSecret": "do-not-expose"
                 },
                 {
                     "id": "r2",
@@ -1436,6 +1510,7 @@ mod tests {
         assert_eq!(query.status.as_str(), "unresolved");
         assert_eq!(reviews.len(), 1);
         assert_eq!(reviews[0].get("id").and_then(Value::as_str), Some("r1"));
+        assert!(reviews[0].get("internalSecret").is_none());
         let _ = fs::remove_dir_all(root);
     }
 

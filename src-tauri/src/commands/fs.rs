@@ -23,7 +23,7 @@ const MEDIA_EXTS: &[&str] = &[
 const LEGACY_DOC_EXTS: &[&str] = &["ppt", "pages", "numbers", "key", "epub"];
 
 fn require_absolute_path(operation: &str, path: &str) -> Result<(), String> {
-    if Path::new(path).is_absolute() {
+    if is_absolute_path_cross_platform(path) {
         Ok(())
     } else {
         Err(format!(
@@ -31,6 +31,26 @@ fn require_absolute_path(operation: &str, path: &str) -> Result<(), String> {
             path
         ))
     }
+}
+
+fn is_absolute_path_cross_platform(path: &str) -> bool {
+    if path.is_empty() {
+        return false;
+    }
+    if Path::new(path).is_absolute() {
+        return true;
+    }
+
+    let bytes = path.as_bytes();
+    if bytes.len() >= 3
+        && bytes[1] == b':'
+        && bytes[0].is_ascii_alphabetic()
+        && matches!(bytes[2], b'/' | b'\\')
+    {
+        return true;
+    }
+
+    path.starts_with(r"\\") || path.starts_with("//")
 }
 
 #[tauri::command]
@@ -1944,16 +1964,13 @@ mod tests {
     #[test]
     fn allow_absolute_write_paths() {
         assert!(require_absolute_path("write_file", "/tmp/project/wiki/sources/page.md").is_ok());
-        #[cfg(windows)]
-        {
-            assert!(require_absolute_path("write_file", "C:/project/wiki/sources/page.md").is_ok());
-            assert!(
-                require_absolute_path("write_file", r"C:\project\wiki\sources\page.md").is_ok()
-            );
-            assert!(
-                require_absolute_path("write_file", r"\\server\share\wiki\sources\page.md").is_ok()
-            );
-        }
+        assert!(require_absolute_path("write_file", "C:/project/wiki/sources/page.md").is_ok());
+        assert!(require_absolute_path("write_file", r"C:\project\wiki\sources\page.md").is_ok());
+        assert!(
+            require_absolute_path("write_file", r"\\server\share\wiki\sources\page.md").is_ok()
+        );
+        assert!(require_absolute_path("write_file", "//server/share/wiki/sources/page.md").is_ok());
+        assert!(require_absolute_path("write_file", "C:wiki/sources/page.md").is_err());
     }
 
     /// Pull the inner sync `copy_recursive` body out from

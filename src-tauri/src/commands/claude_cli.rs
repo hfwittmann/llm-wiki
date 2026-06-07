@@ -211,6 +211,7 @@ pub async fn claude_cli_spawn(
     stream_id: String,
     model: String,
     messages: Vec<ClaudeMessage>,
+    isolate_local_config: bool,
 ) -> Result<(), String> {
     // Build the turn list: fold any system messages into a preamble on
     // the first user turn rather than using a CLI flag, because
@@ -253,14 +254,7 @@ pub async fn claude_cli_spawn(
     let claude = find_claude_command().await?;
     let mut cmd = Command::new(&claude);
     suppress_windows_console(&mut cmd);
-    cmd.arg("-p")
-        .arg("--output-format")
-        .arg("stream-json")
-        .arg("--input-format")
-        .arg("stream-json")
-        .arg("--verbose")
-        .arg("--model")
-        .arg(&model);
+    cmd.args(build_claude_cli_args(&model, isolate_local_config));
 
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -387,6 +381,40 @@ pub async fn claude_cli_spawn(
     Ok(())
 }
 
+fn build_claude_cli_args(model: &str, isolate_local_config: bool) -> Vec<String> {
+    let mut args = vec![
+        "-p".to_string(),
+        "--output-format".to_string(),
+        "stream-json".to_string(),
+        "--input-format".to_string(),
+        "stream-json".to_string(),
+        "--verbose".to_string(),
+    ];
+
+    if isolate_local_config {
+        // Claude has no documented "empty setting sources" mode. Keep the
+        // narrow project source so explicit project-level Claude settings can
+        // still apply, while user/global config, MCP, tools, sessions, and
+        // slash commands are constrained below.
+        args.extend([
+            "--setting-sources".to_string(),
+            "project".to_string(),
+            "--strict-mcp-config".to_string(),
+            "--mcp-config".to_string(),
+            "{}".to_string(),
+            "--disable-slash-commands".to_string(),
+            "--tools".to_string(),
+            "".to_string(),
+            "--no-session-persistence".to_string(),
+            "--prompt-suggestions".to_string(),
+            "false".to_string(),
+        ]);
+    }
+
+    args.extend(["--model".to_string(), model.to_string()]);
+    args
+}
+
 /// Kill a running child registered under `stream_id`. Called on
 /// AbortSignal in the frontend. No-op if the id is unknown (e.g. the
 /// process already exited).
@@ -443,5 +471,37 @@ mod tests {
         .expect("content block payload should deserialize");
 
         assert_eq!(claude_content_text_only(&content), "system rule");
+    }
+
+    #[test]
+    fn claude_args_do_not_isolate_local_config_by_default() {
+        let args = build_claude_cli_args("sonnet", false);
+
+        assert!(args.contains(&"--model".to_string()));
+        assert!(args.contains(&"sonnet".to_string()));
+        assert!(!args.contains(&"--setting-sources".to_string()));
+        assert!(!args.contains(&"--strict-mcp-config".to_string()));
+        assert!(!args.contains(&"--disable-slash-commands".to_string()));
+    }
+
+    #[test]
+    fn claude_args_can_isolate_user_config_tools_and_mcp() {
+        let args = build_claude_cli_args("sonnet", true);
+
+        assert!(args
+            .windows(2)
+            .any(|pair| pair[0] == "--setting-sources" && pair[1] == "project"));
+        assert!(args.contains(&"--strict-mcp-config".to_string()));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair[0] == "--mcp-config" && pair[1] == "{}"));
+        assert!(args.contains(&"--disable-slash-commands".to_string()));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair[0] == "--tools" && pair[1].is_empty()));
+        assert!(args.contains(&"--no-session-persistence".to_string()));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair[0] == "--prompt-suggestions" && pair[1] == "false"));
     }
 }
