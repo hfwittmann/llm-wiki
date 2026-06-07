@@ -206,6 +206,7 @@ export function SettingsView() {
 
   const [active, setActive] = useState<CategoryId>("llm")
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [currentTheme, setCurrentTheme] = useState<AppTheme>("system")
   const [draft, setDraftState] = useState<SettingsDraft>(() =>
     initialDraft(
@@ -296,21 +297,36 @@ export function SettingsView() {
   ])
 
   const setDraft: DraftSetter = useCallback((key, value) => {
+    setSaveError(null)
     setDraftState((prev) => ({ ...prev, [key]: value }))
   }, [])
 
+  useEffect(() => {
+    setSaveError(null)
+  }, [active])
+
   const handleSave = useCallback(async () => {
+    setSaveError(null)
     const {
       saveLlmConfig,
+      loadLlmConfig,
       saveEmbeddingConfig,
+      loadEmbeddingConfig,
       saveMultimodalConfig,
+      loadMultimodalConfig,
       saveOutputLanguage,
+      loadOutputLanguage,
       saveProxyConfig,
+      loadProxyConfig,
       saveScheduledImportConfig,
+      loadScheduledImportConfig,
       saveSourceWatchConfig,
       saveMineruConfig,
+      loadMineruConfig,
       saveApiConfig,
+      loadApiConfig,
       saveGeneralConfig,
+      loadGeneralConfig,
     } = await import("@/lib/project-store")
 
     const newLlm = {
@@ -361,140 +377,199 @@ export function SettingsView() {
       url: draft.proxyUrl.trim(),
       bypassLocal: draft.proxyBypassLocal,
     }
-
-    setLlmConfig(newLlm)
-    await saveLlmConfig(newLlm)
-    setEmbeddingConfig(newEmbed)
-    await saveEmbeddingConfig(newEmbed)
-    setMultimodalConfig(newMultimodal)
-    await saveMultimodalConfig(newMultimodal)
-    setOutputLanguage(draft.outputLanguage as typeof outputLanguage)
-    await saveOutputLanguage(draft.outputLanguage as typeof outputLanguage, project?.id)
-    setProxyConfig(newProxy)
-    await saveProxyConfig(newProxy)
     const newSourceWatch = normalizeSourceWatchConfig(draft.sourceWatchConfig)
-    setSourceWatchConfig(newSourceWatch)
-    await saveSourceWatchConfig(newSourceWatch, project?.id)
-    if (project) {
-      const { startProjectFileSync, stopProjectFileSync } = await import("@/lib/project-file-sync")
-      if (newSourceWatch.enabled) {
-        await startProjectFileSync(project, newSourceWatch).catch((err) =>
-          console.error("Failed to start project file sync:", err)
-        )
-      } else {
-        await stopProjectFileSync()
-      }
-    }
-    // Apply the proxy env vars LIVE so the next outbound request
-    // picks them up — no app restart needed. tauri-plugin-http
-    // builds a fresh reqwest client per fetch and reqwest reads
-    // env vars at build time, so changing them here is enough.
-    try {
-      await invoke<string>("set_proxy_env", { config: newProxy })
-    } catch (err) {
-      console.warn("[proxy] live update failed; restart will still apply:", err)
-    }
-
     const newScheduledImport = {
       enabled: draft.scheduledImportEnabled,
       path: draft.scheduledImportPath,
       interval: Math.max(1, Math.min(1440, draft.scheduledImportInterval || 60)),
       lastScan: scheduledImportConfig.lastScan,
     }
-    setScheduledImportConfig(newScheduledImport)
-    if (project) {
-      await saveScheduledImportConfig(project.path, newScheduledImport)
-      const { startScheduledImport, stopScheduledImport } = await import("@/lib/scheduled-import")
-      if (
-        newScheduledImport.enabled &&
-        newScheduledImport.path &&
-        newScheduledImport.interval > 0
-      ) {
-        startScheduledImport(project, newScheduledImport)
-      } else {
-        stopScheduledImport()
-      }
-    }
-
-    setMaxHistoryMessages(draft.maxHistoryMessages)
-
-    // ── MinerU: persist + push to store.
     const newMineruConfig = {
       enabled: draft.mineruEnabled,
       token: draft.mineruToken.trim(),
       modelVersion: draft.mineruModelVersion,
     }
-    setMineruConfig(newMineruConfig)
-    await saveMineruConfig(newMineruConfig)
-
-    // ── API server: persist + push to store. The Rust side reads
-    // `apiConfig.{enabled,token,mcpEnabled}` from this same `app-state.json` on
-    // every request via a 5s cache, so saved changes propagate
-    // within that window without any IPC round-trip.
     const newApiConfig = {
       enabled: draft.apiEnabled,
       allowUnauthenticated: draft.apiAllowUnauthenticated,
       mcpEnabled: draft.apiMcpEnabled,
       token: draft.apiToken.trim(),
     }
-    setApiConfig(newApiConfig)
-    await saveApiConfig(newApiConfig)
-    try {
-      await invoke<string>("api_server_reload_config")
-    } catch (err) {
-      console.warn("[api] failed to reload API server config cache:", err)
-    }
-
     const newGeneralConfig = {
       autostart: draft.autostart,
       closeBehavior: draft.closeBehavior,
     }
+
+    // Push all config values to zustand before any awaited save below. The
+    // settings draft resync effect runs after store updates; if any config stays
+    // stale until later in the save sequence, that resync can briefly restore
+    // the old value and make the UI look like saving reverted the user's edit.
+    setLlmConfig(newLlm)
+    setEmbeddingConfig(newEmbed)
+    setMultimodalConfig(newMultimodal)
+    setOutputLanguage(draft.outputLanguage as typeof outputLanguage)
+    setProxyConfig(newProxy)
+    setSourceWatchConfig(newSourceWatch)
+    setScheduledImportConfig(newScheduledImport)
+    setMaxHistoryMessages(draft.maxHistoryMessages)
+    setMineruConfig(newMineruConfig)
+    setApiConfig(newApiConfig)
     setGeneralConfig(newGeneralConfig)
-    await saveGeneralConfig(newGeneralConfig)
+
     try {
-      if (newGeneralConfig.autostart) {
-        await enableAutostart()
-      } else {
-        await disableAutostart()
+      await saveLlmConfig(newLlm)
+      await saveEmbeddingConfig(newEmbed)
+      await saveMultimodalConfig(newMultimodal)
+      await saveOutputLanguage(draft.outputLanguage as typeof outputLanguage, project?.id)
+      await saveProxyConfig(newProxy)
+      await saveSourceWatchConfig(newSourceWatch, project?.id)
+      if (project) {
+        const { startProjectFileSync, stopProjectFileSync } = await import("@/lib/project-file-sync")
+        if (newSourceWatch.enabled) {
+          await startProjectFileSync(project, newSourceWatch).catch((err) =>
+            console.error("Failed to start project file sync:", err)
+          )
+        } else {
+          await stopProjectFileSync()
+        }
       }
+      // Apply the proxy env vars LIVE so the next outbound request
+      // picks them up — no app restart needed. tauri-plugin-http
+      // builds a fresh reqwest client per fetch and reqwest reads
+      // env vars at build time, so changing them here is enough.
+      try {
+        await invoke<string>("set_proxy_env", { config: newProxy })
+      } catch (err) {
+        console.warn("[proxy] live update failed; restart will still apply:", err)
+      }
+
+      if (project) {
+        await saveScheduledImportConfig(project.path, newScheduledImport)
+        const { startScheduledImport, stopScheduledImport } = await import("@/lib/scheduled-import")
+        if (
+          newScheduledImport.enabled &&
+          newScheduledImport.path &&
+          newScheduledImport.interval > 0
+        ) {
+          startScheduledImport(project, newScheduledImport)
+        } else {
+          stopScheduledImport()
+        }
+      }
+
+      await saveMineruConfig(newMineruConfig)
+
+      // The Rust side reads `apiConfig.{enabled,token,mcpEnabled}` from this
+      // same `app-state.json` via a 5s cache, so saved changes propagate within
+      // that window without any IPC round-trip.
+      await saveApiConfig(newApiConfig)
+      try {
+        await invoke<string>("api_server_reload_config")
+      } catch (err) {
+        console.warn("[api] failed to reload API server config cache:", err)
+      }
+
+      await saveGeneralConfig(newGeneralConfig)
+      try {
+        if (newGeneralConfig.autostart) {
+          await enableAutostart()
+        } else {
+          await disableAutostart()
+        }
+      } catch (err) {
+        console.warn("[general] failed to update autostart:", err)
+      }
+      try {
+        await invoke<string>("set_close_behavior", { value: newGeneralConfig.closeBehavior })
+      } catch (err) {
+        console.warn("[general] failed to update close behavior:", err)
+      }
+
+      if (draft.uiLanguage !== i18n.language) {
+        await i18n.changeLanguage(draft.uiLanguage)
+        await saveLanguage(draft.uiLanguage)
+      }
+
+      // Save theme
+      if (draft.theme !== currentTheme) {
+        await saveTheme(draft.theme)
+        setCurrentTheme(draft.theme)
+        // Apply theme immediately
+        applyTheme(draft.theme)
+      }
+
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
     } catch (err) {
-      console.warn("[general] failed to update autostart:", err)
+      const message = err instanceof Error ? err.message : String(err)
+      console.error("[settings] failed to save settings:", err)
+      const resultValue = <T,>(result: PromiseSettledResult<T>, fallback: T): T =>
+        result.status === "fulfilled" ? result.value : fallback
+      try {
+        const [
+          persistedLlm,
+          persistedEmbedding,
+          persistedMultimodal,
+          persistedOutputLanguage,
+          persistedProxy,
+          persistedSourceWatch,
+          persistedScheduledImport,
+          persistedMineru,
+          persistedApi,
+          persistedGeneral,
+        ] = await Promise.allSettled([
+          loadLlmConfig(),
+          loadEmbeddingConfig(),
+          loadMultimodalConfig(),
+          loadOutputLanguage(project?.id),
+          loadProxyConfig(),
+          loadSourceWatchConfig(project?.id),
+          project ? loadScheduledImportConfig(project.path) : Promise.resolve(null),
+          loadMineruConfig(),
+          loadApiConfig(),
+          loadGeneralConfig(),
+        ] as const)
+        setLlmConfig(resultValue(persistedLlm, null) ?? llmConfig)
+        setEmbeddingConfig(resultValue(persistedEmbedding, null) ?? embeddingConfig)
+        setMultimodalConfig(resultValue(persistedMultimodal, null) ?? multimodalConfig)
+        setOutputLanguage((resultValue(persistedOutputLanguage, null) ?? outputLanguage) as typeof outputLanguage)
+        setProxyConfig(resultValue(persistedProxy, null) ?? proxyConfig)
+        setSourceWatchConfig(resultValue(persistedSourceWatch, sourceWatchConfig))
+        setScheduledImportConfig(resultValue(persistedScheduledImport, null) ?? scheduledImportConfig)
+        setMaxHistoryMessages(maxHistoryMessages)
+        setMineruConfig(resultValue(persistedMineru, null) ?? mineruConfig)
+        setApiConfig(resultValue(persistedApi, null) ?? apiConfig)
+        setGeneralConfig(resultValue(persistedGeneral, generalConfig))
+      } catch (reloadErr) {
+        console.warn("[settings] failed to reload persisted settings after save failure:", reloadErr)
+      }
+      setSaveError(message || "unknown error")
     }
-    try {
-      await invoke<string>("set_close_behavior", { value: newGeneralConfig.closeBehavior })
-    } catch (err) {
-      console.warn("[general] failed to update close behavior:", err)
-    }
-
-    if (draft.uiLanguage !== i18n.language) {
-      await i18n.changeLanguage(draft.uiLanguage)
-      await saveLanguage(draft.uiLanguage)
-    }
-
-    // Save theme
-    if (draft.theme !== currentTheme) {
-      await saveTheme(draft.theme)
-      setCurrentTheme(draft.theme)
-      // Apply theme immediately
-      applyTheme(draft.theme)
-    }
-
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
   }, [
     draft,
     project,
+    llmConfig,
+    embeddingConfig,
+    multimodalConfig,
+    outputLanguage,
+    proxyConfig,
+    sourceWatchConfig,
+    scheduledImportConfig,
+    mineruConfig,
+    apiConfig,
+    generalConfig,
+    maxHistoryMessages,
     setLlmConfig,
     setEmbeddingConfig,
+    setMultimodalConfig,
     setOutputLanguage,
     setProxyConfig,
     setScheduledImportConfig,
     setSourceWatchConfig,
+    setMineruConfig,
     setApiConfig,
     setGeneralConfig,
-    scheduledImportConfig,
     setMaxHistoryMessages,
-    outputLanguage,
     currentTheme,
   ])
 
@@ -599,8 +674,12 @@ export function SettingsView() {
         {active !== "about" && active !== "llm" && (
           <div className="shrink-0 border-t bg-background/80 backdrop-blur px-8 py-3">
             <div className="mx-auto flex max-w-2xl items-center justify-between gap-4">
-              <p className="text-xs text-muted-foreground">
-                {saved ? t("settings.savedTick") : t("settings.changeHint")}
+              <p className={`text-xs ${saveError ? "text-destructive" : "text-muted-foreground"}`}>
+                {saveError
+                  ? t("settings.saveFailed")
+                  : saved
+                    ? t("settings.savedTick")
+                    : t("settings.changeHint")}
               </p>
               <Button onClick={handleSave}>
                 {saved ? t("settings.saved") : t("settings.save")}

@@ -202,6 +202,7 @@
     "saved": "Saved",
     "savedTick": "Saved ✓",
     "changeHint": "Changes apply after saving.",
+    "saveFailed": "Save failed. Some settings may not have been saved. See the console for details.",
     "language": "Language",
     "languageHint": "Interface language (wiki content follows source material language)",
     "categories": {
