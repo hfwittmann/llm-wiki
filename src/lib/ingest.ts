@@ -1559,6 +1559,7 @@ export function buildGenerationPrompt(
     "- Use [[wikilink]] syntax in the BODY for cross-references between pages",
     "- If you include images, use wiki-root-relative paths such as `media/source-slug/image.png`; never output absolute filesystem paths.",
     "- Use kebab-case filenames",
+    "- Derive filenames from the page title in the mandatory output language. For Chinese/Japanese/Korean titles, keep readable CJK characters in the filename instead of translating the slug to English.",
     "- Follow the analysis recommendations on what to emphasize",
     "- If the analysis found connections to existing pages, add cross-references",
     "",

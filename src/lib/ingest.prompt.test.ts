@@ -72,6 +72,14 @@ describe("buildGenerationPrompt language directive", () => {
     expect(prompt).toContain("my-paper.pdf")
   })
 
+  it("tells the model to keep generated filenames aligned with the output language", () => {
+    useWikiStore.getState().setOutputLanguage("Chinese")
+    const prompt = buildGenerationPrompt("", "", "", "source.pdf")
+
+    expect(prompt).toContain("Derive filenames from the page title in the mandatory output language")
+    expect(prompt).toContain("keep readable CJK characters in the filename")
+  })
+
   it("makes project schema routing authoritative over default entity and concept folders", () => {
     const prompt = buildGenerationPrompt(
       "Use wiki/people/ for people. Use wiki/technologies/ for technical methods.",

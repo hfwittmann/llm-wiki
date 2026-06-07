@@ -296,6 +296,7 @@
         "apiKey": "API Key (optional)",
         "apiKeyPlaceholder": "Leave empty for local models",
         "model": "Model",
+        "modelHint": "Common examples are suggested, but custom OpenAI-compatible model IDs are accepted.",
         "outputDimensionality": "Output dimensionality (Gemini only)",
         "outputDimensionalityHint": "Optional. Sent only for Gemini native embedContent endpoints as `output_dimensionality`; OpenAI-compatible endpoints ignore this field. Leave empty for the model default. Rebuild embeddings after changing model or dimension.",
         "extraHeaders": "Custom request headers",

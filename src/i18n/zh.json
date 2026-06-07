@@ -296,6 +296,7 @@
         "apiKey": "API Key（可选）",
         "apiKeyPlaceholder": "本地模型留空即可",
         "model": "Model",
+        "modelHint": "输入框会提示常见模型；OpenAI 兼容 endpoint 的自定义模型 ID 也可以直接填写。",
         "outputDimensionality": "输出维度（仅 Gemini）",
         "outputDimensionalityHint": "可选。仅对 Gemini 原生 embedContent endpoint 作为 `output_dimensionality` 发送；OpenAI 兼容 endpoint 会忽略此项。留空则使用模型默认值。修改模型或维度后需要重建嵌入。",
         "extraHeaders": "自定义请求头",
