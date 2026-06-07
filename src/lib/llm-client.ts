@@ -256,7 +256,23 @@ export async function streamChat(
 
     onDone()
   } catch (err) {
-    if (err instanceof Error && (err.name === "AbortError" || (signal?.aborted))) {
+    // The abort can reach us two ways: a real AbortError, or — when the
+    // Tauri HTTP plugin tears down the body stream — a bare *string*
+    // "Request cancelled" passed to controller.error(). The latter is not
+    // an Error, so the old `err instanceof Error` guard let it fall through
+    // to the generic branch and surface verbatim. Recognize both shapes.
+    const isAbort =
+      signal?.aborted ||
+      timeoutFired ||
+      (err instanceof Error && err.name === "AbortError") ||
+      (err instanceof Error ? err.message : String(err)) === "Request cancelled"
+    if (isAbort) {
+      // Mirror the pre-fetch catch: distinguish our long-horizon backstop
+      // (an actionable timeout) from a user-initiated cancel (silent).
+      if (timeoutFired) {
+        onError(new Error(`Request timed out after ${Math.round(timeoutMs / 60000)} min. Try a faster model or a smaller context.`))
+        return
+      }
       onDone()
       return
     }
