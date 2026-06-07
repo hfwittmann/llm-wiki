@@ -40,6 +40,12 @@ describe("makeDeepResearchFileName", () => {
     expect(second.fileName).toBe("research-反硝化除磷-2026-06-06-100001.md")
     expect(first.fileName).not.toBe(second.fileName)
   })
+
+  it("uses the local calendar date for frontmatter metadata", () => {
+    const localMorning = new Date(2026, 5, 6, 1, 30, 0)
+
+    expect(makeDeepResearchFileName("政策版本差异", localMorning).date).toBe("2026-06-06")
+  })
 })
 
 describe("collectResearchSources", () => {

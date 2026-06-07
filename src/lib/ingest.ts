@@ -17,6 +17,7 @@ import { useReviewStore, type ReviewItem } from "@/stores/review-store"
 import { getFileName, normalizePath } from "@/lib/path-utils"
 import {
   sourceIdentityForPath,
+  sourceSummarySlugCandidatesFromIdentity,
   sourceSummarySlugFromIdentity,
 } from "@/lib/source-identity"
 import { parseSources, writeSources } from "@/lib/sources-merge"
@@ -1084,6 +1085,10 @@ async function migrateLegacySourceSummaryIfSafe(
   const normalizedIdentity = normalizePath(sourceIdentity)
   if (!normalizedIdentity.includes("/")) return
 
+  if (await migrateExactLegacySourceSummaryIfSafe(projectPath, normalizedIdentity, sourceSummaryPath)) {
+    return
+  }
+
   const basename = getFileName(normalizedIdentity)
   const legacySlug = basename.replace(/\.[^.]+$/, "")
   const legacyPath = `wiki/sources/${legacySlug}.md`
@@ -1132,6 +1137,58 @@ async function migrateLegacySourceSummaryIfSafe(
       err instanceof Error ? err.message : err,
     )
   }
+}
+
+async function migrateExactLegacySourceSummaryIfSafe(
+  projectPath: string,
+  sourceIdentity: string,
+  sourceSummaryPath: string,
+): Promise<boolean> {
+  const pp = normalizePath(projectPath)
+  const canonicalFullPath = `${pp}/${sourceSummaryPath}`
+  let canonicalExists = false
+  try {
+    canonicalExists = await fileExists(canonicalFullPath)
+  } catch {
+    return false
+  }
+  if (canonicalExists) return false
+
+  const sourceKey = normalizePath(sourceIdentity).toLowerCase()
+  const legacyPaths = sourceSummarySlugCandidatesFromIdentity(sourceIdentity)
+    .map((slug) => `wiki/sources/${slug}.md`)
+    .filter((path) => path !== sourceSummaryPath)
+
+  for (const legacyPath of legacyPaths) {
+    const legacyFullPath = `${pp}/${legacyPath}`
+    let legacyContent = ""
+    try {
+      if (!(await fileExists(legacyFullPath))) continue
+      legacyContent = await readFile(legacyFullPath)
+    } catch {
+      continue
+    }
+
+    const sources = parseSources(legacyContent)
+    const referencesSameSource = sources.some(
+      (source) => normalizePath(source).toLowerCase() === sourceKey,
+    )
+    if (!referencesSameSource) continue
+
+    try {
+      await writeFile(canonicalFullPath, canonicalizeSourcesField(legacyContent, sourceIdentity))
+      await deleteFile(legacyFullPath)
+      return true
+    } catch (err) {
+      console.warn(
+        `[ingest] failed to migrate legacy source summary ${legacyPath} -> ${sourceSummaryPath}:`,
+        err instanceof Error ? err.message : err,
+      )
+      return false
+    }
+  }
+
+  return false
 }
 
 async function matchingRawSourceIdentitiesForBasename(

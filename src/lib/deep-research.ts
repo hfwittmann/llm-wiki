@@ -1,7 +1,7 @@
 import { anyTxtSearchSmart, hasConfiguredAnyTxt } from "./anytxt-search"
 import { hasConfiguredSearchProvider, resolveSearchConfig, webSearch } from "./web-search"
 import { streamChat } from "./llm-client"
-import { autoIngest } from "./ingest"
+import { autoIngest, currentWikiDate } from "./ingest"
 import { writeFile, readFile, listDirectory } from "@/commands/fs"
 import { useWikiStore, type LlmConfig, type SearchApiConfig } from "@/stores/wiki-store"
 import { useResearchStore } from "@/stores/research-store"
@@ -29,8 +29,8 @@ export function makeDeepResearchFileName(topic: string, now: Date = new Date()):
   fileName: string
   date: string
 } {
-  const { fileName, date } = makeQueryFileName(`research-${topic}`, now)
-  return { fileName, date }
+  const { fileName } = makeQueryFileName(`research-${topic}`, now)
+  return { fileName, date: currentWikiDate(now) }
 }
 
 /**
