@@ -91,8 +91,17 @@ export function AppLayout({ onSwitchProject }: AppLayoutProps) {
   const isSettings = activeView === "settings"
   const hasRightPanel = !isSettings && !!(selectedFile || researchPanelOpen)
 
-  // Zoom
+  // Zoom — adjust root font-size so all rem units scale proportionally.
+  // Using `transform: scale()` would also zoom visually, but it doesn't
+  // change actual layout dimensions, causing mouse coordinates to drift
+  // during sidebar drag-resize and container alignment issues.  Changing
+  // the rem base avoids those problems because every layout unit expands
+  // natively — Tailwind uses rem for spacing, typography, and sizing, so
+  // the whole UI scales correctly.
   const zoomLevel = useZoomStore((s) => s.level)
+  useEffect(() => {
+    document.documentElement.style.fontSize = `${16 * zoomLevel}px`
+  }, [zoomLevel])
 
   return (
     // Outer column layout: full-width update banner on top (when an
@@ -105,17 +114,7 @@ export function AppLayout({ onSwitchProject }: AppLayoutProps) {
       <div className="flex min-h-0 flex-1">
         <IconSidebar onSwitchProject={onSwitchProject} />
         <div ref={containerRef} className="relative flex min-w-0 flex-1 overflow-hidden">
-          {/* Zoom transform wrapper — scales the entire work area */}
-          <div
-            className="flex min-w-0 flex-1"
-            style={{
-              transform: `scale(${zoomLevel})`,
-              transformOrigin: "top left",
-              width: `${100 / zoomLevel}%`,
-              height: `${100 / zoomLevel}%`,
-            }}
-          >
-        {!isSettings && (
+          {!isSettings && (
           <>
             {/* Left: File tree + Activity */}
             <div
@@ -169,8 +168,6 @@ export function AppLayout({ onSwitchProject }: AppLayoutProps) {
             </div>
           </>
         )}
-          </div>
-          {/* end zoom wrapper */}
         </div>
       </div>
     </div>
