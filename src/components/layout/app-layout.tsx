@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useWikiStore } from "@/stores/wiki-store"
+import { useZoomStore } from "@/stores/zoom-store"
 import { listDirectory } from "@/commands/fs"
 import { normalizePath } from "@/lib/path-utils"
 import { IconSidebar } from "./icon-sidebar"
@@ -9,6 +10,7 @@ import { ContentArea } from "./content-area"
 import { PreviewPanel } from "./preview-panel"
 import { ResearchPanel } from "./research-panel"
 import { ActivityPanel } from "./activity-panel"
+import { ZoomControls } from "./zoom-controls"
 import { useResearchStore } from "@/stores/research-store"
 import { ErrorBoundary } from "@/components/error-boundary"
 
@@ -90,6 +92,9 @@ export function AppLayout({ onSwitchProject }: AppLayoutProps) {
   const isSettings = activeView === "settings"
   const hasRightPanel = !isSettings && !!(selectedFile || researchPanelOpen)
 
+  // Zoom
+  const zoomLevel = useZoomStore((s) => s.level)
+
   return (
     // Outer column layout: full-width update banner on top (when an
     // update is available AND not dismissed for this version), the
@@ -100,7 +105,18 @@ export function AppLayout({ onSwitchProject }: AppLayoutProps) {
       <UpdateBanner />
       <div className="flex min-h-0 flex-1">
         <IconSidebar onSwitchProject={onSwitchProject} />
-        <div ref={containerRef} className="flex min-w-0 flex-1 overflow-hidden">
+        <ZoomControls />
+        <div ref={containerRef} className="relative flex min-w-0 flex-1 overflow-hidden">
+          {/* Zoom transform wrapper — scales the entire work area */}
+          <div
+            className="flex min-w-0 flex-1"
+            style={{
+              transform: `scale(${zoomLevel})`,
+              transformOrigin: "top left",
+              width: `${100 / zoomLevel}%`,
+              height: `${100 / zoomLevel}%`,
+            }}
+          >
         {!isSettings && (
           <>
             {/* Left: File tree + Activity */}
@@ -155,6 +171,8 @@ export function AppLayout({ onSwitchProject }: AppLayoutProps) {
             </div>
           </>
         )}
+          </div>
+          {/* end zoom wrapper */}
         </div>
       </div>
     </div>
