@@ -108,6 +108,22 @@ impl Users {
             .unwrap_or_else(|| id.clone());
         Ok(User { id, username })
     }
+
+    pub fn lookup_user(&self, id: &str) -> Option<User> {
+        let lookup_id = id.to_lowercase();
+        // Only return Some if the record exists; the display_names map is
+        // populated in lockstep at load time, so a record-hit guarantees a
+        // display_names hit.
+        if !self.by_id.contains_key(&lookup_id) {
+            return None;
+        }
+        let username = self
+            .display_names
+            .get(&lookup_id)
+            .cloned()
+            .unwrap_or_else(|| lookup_id.clone());
+        Some(User { id: lookup_id, username })
+    }
 }
 
 pub fn hash_password(plaintext: &str) -> Result<String, AuthError> {
@@ -228,5 +244,39 @@ mod tests {
             "expected AuthError::Hash for corrupted stored hash, got {:?}",
             result
         );
+    }
+
+    #[test]
+    fn lookup_user_returns_user_when_present() {
+        let hash = hash_password("pw").unwrap();
+        let dir = TempDir::new().unwrap();
+        let path = write_users_toml(
+            &dir,
+            &format!("[users.Alice]\npassword_hash = \"{}\"\n", hash),
+        );
+        let users = Users::load(&path).unwrap();
+        let u = users.lookup_user("alice").unwrap();
+        assert_eq!(u.id, "alice");
+        assert_eq!(u.username, "Alice");
+    }
+
+    #[test]
+    fn lookup_user_returns_none_for_unknown() {
+        let dir = TempDir::new().unwrap();
+        let path = write_users_toml(&dir, "");
+        let users = Users::load(&path).unwrap();
+        assert!(users.lookup_user("nobody").is_none());
+    }
+
+    #[test]
+    fn lookup_user_is_case_insensitive() {
+        let hash = hash_password("pw").unwrap();
+        let dir = TempDir::new().unwrap();
+        let path = write_users_toml(
+            &dir,
+            &format!("[users.Bob]\npassword_hash = \"{}\"\n", hash),
+        );
+        let users = Users::load(&path).unwrap();
+        assert_eq!(users.lookup_user("BOB").unwrap().username, "Bob");
     }
 }
