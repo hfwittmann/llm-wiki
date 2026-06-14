@@ -13,6 +13,8 @@ use tauri::{AppHandle, Manager};
 use tiny_http::{Header, Method, Response, Server, StatusCode};
 use walkdir::WalkDir;
 
+use crate::commands::tauri_event_sink::TauriEventSink;
+use crate::core::file_sync::SourceWatchConfig;
 use crate::{clip_server, commands};
 
 const PORT: u16 = 19828;
@@ -1372,11 +1374,12 @@ fn handle_rescan(app: &AppHandle, project_id: &str) -> ApiResponse {
         Err(e) => return err(404, e),
     };
     let source_watch_config = load_source_watch_config(app, &project.id);
-    match commands::file_sync::rescan_project_files(
-        app.clone(),
-        project.id.clone(),
-        project.path.clone(),
+    let sink = TauriEventSink::new(app.clone());
+    match crate::core::file_sync::rescan_project_files(
+        &project.id,
+        &project.path,
         source_watch_config,
+        &sink,
     ) {
         Ok(result) => ok(json!({ "ok": true, "projectId": project.id, "result": result })),
         Err(e) => err(500, e),
@@ -1386,15 +1389,14 @@ fn handle_rescan(app: &AppHandle, project_id: &str) -> ApiResponse {
 fn load_source_watch_config(
     app: &AppHandle,
     project_id: &str,
-) -> Option<commands::file_sync::SourceWatchConfig> {
+) -> Option<SourceWatchConfig> {
     let parsed = load_app_state(app)?;
     let settings = parsed.get("sourceWatchConfig").and_then(Value::as_object);
     if let Some(value) = settings
         .and_then(|s| s.get(project_id).or_else(|| s.get("default")))
         .cloned()
     {
-        if let Ok(config) = serde_json::from_value::<commands::file_sync::SourceWatchConfig>(value)
-        {
+        if let Ok(config) = serde_json::from_value::<SourceWatchConfig>(value) {
             return Some(config);
         }
     }
@@ -1408,10 +1410,7 @@ fn load_source_watch_config(
                 .and_then(Value::as_bool)
         });
     legacy_enabled.and_then(|enabled| {
-        serde_json::from_value::<commands::file_sync::SourceWatchConfig>(
-            json!({ "enabled": enabled }),
-        )
-        .ok()
+        serde_json::from_value::<SourceWatchConfig>(json!({ "enabled": enabled })).ok()
     })
 }
 

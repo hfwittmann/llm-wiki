@@ -18,7 +18,7 @@ use calamine::{open_workbook_auto, Data, Reader};
 use office_oxide::Document;
 use serde::{Deserialize, Serialize};
 
-use crate::commands::file_sync;
+use crate::core::file_sync;
 use crate::panic_guard::run_guarded;
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -314,7 +314,7 @@ pub(crate) fn write_cache(original: &Path, text: &str) -> Result<(), String> {
     if let Some(parent) = cache_path.parent() {
         fs::create_dir_all(parent).ok();
     }
-    crate::commands::file_sync::mark_app_write_path(&cache_path);
+    crate::core::file_sync::mark_app_write_path(&cache_path);
     fs::write(&cache_path, text).map_err(|e| format!("Failed to write cache: {}", e))
 }
 

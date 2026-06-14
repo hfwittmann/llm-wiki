@@ -9,8 +9,10 @@
 
 pub mod events;
 pub mod extract;
+pub mod file_sync;
 pub mod files;
 pub mod fs_ops;
+pub mod ingest_queue;
 pub mod project;
 pub mod search;
 pub mod vectorstore;
