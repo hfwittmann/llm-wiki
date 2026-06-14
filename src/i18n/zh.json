@@ -170,6 +170,7 @@
     "open": "打开",
     "fixing": "修复中...",
     "fix": "修复",
+    "fixFailed": "修复失败：{{error}}",
     "delete": "删除",
     "openEdit": "打开编辑",
     "skip": "跳过",
@@ -177,6 +178,8 @@
     "fixBrokenLink": "修复 {{page}} 中的失效链接",
     "addCrossRefs": "为 {{page}} 添加交叉引用",
     "addCrossRefsDescription": "此页面没有出站 [[wikilinks]]。建议添加与相关实体和概念的交叉引用。",
+    "suggestedTarget": "建议目标：{{page}}",
+    "suggestedSource": "建议来源：{{page}}",
     "deleteOrphanConfirm": "删除孤立页面「{{page}}」？",
     "typeLabels": {
       "orphan": "孤立页面",
