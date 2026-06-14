@@ -15,6 +15,7 @@ pub mod embed;
 pub mod error_mapping;
 pub mod session_event_sink;
 pub mod projects;
+pub mod wiki;
 
 use std::sync::Arc;
 
@@ -44,6 +45,7 @@ pub fn main_router(state: AppState) -> Router {
         .route("/api/v1/health", get(health))
         .merge(auth::auth_router())
         .merge(projects::projects_router())
+        .merge(wiki::wiki_router())
         .route("/api/v1/events", get(events::events_handler))
         // Session middleware: extract cookie, inject User if valid.
         .route_layer(from_fn_with_state(state.clone(), auth::session_middleware))
@@ -490,5 +492,288 @@ mod tests {
         let s = String::from_utf8_lossy(&body);
         assert!(s.contains("<!DOCTYPE html>"));
         assert!(s.contains("<html"));
+    }
+
+    // ── Wiki handler helpers ──────────────────────────────────────────────────
+
+    /// Build a state whose `projects_root` points at a real temp directory,
+    /// and create one valid project under it (`proj/schema.md` + `proj/wiki/`).
+    fn build_state_with_user_and_projects_root(
+        username: &str,
+        password: &str,
+    ) -> (TempDir, AppState, PathBuf) {
+        let dir = TempDir::new().unwrap();
+        let hash = crate::auth::users::hash_password(password).unwrap();
+        let users_path = dir.path().join("users.toml");
+        std::fs::write(
+            &users_path,
+            format!("[users.{username}]\npassword_hash = \"{hash}\"\n"),
+        )
+        .unwrap();
+        let users = crate::auth::users::Users::load(&users_path).unwrap();
+        let sessions = crate::auth::sessions::Sessions::open(&dir.path().join("sessions")).unwrap();
+        let user_data = crate::storage::user_data::UserData::new(dir.path().to_path_buf());
+        let bus = crate::storage::session_bus::SessionBus::new();
+
+        let projects_root = dir.path().join("projects");
+        std::fs::create_dir_all(&projects_root).unwrap();
+
+        // Create a minimal valid project.
+        let proj_dir = projects_root.join("proj");
+        std::fs::create_dir_all(proj_dir.join("wiki")).unwrap();
+        std::fs::write(proj_dir.join("schema.md"), b"# Schema\n").unwrap();
+        std::fs::write(proj_dir.join("wiki/foo.md"), b"# Foo\n\nHello world.\n").unwrap();
+
+        let cfg = crate::config::ServerConfig {
+            port: 8080,
+            projects_root: projects_root.clone(),
+            data_root: dir.path().to_path_buf(),
+            legacy_19828_enabled: true,
+            session_cookie_name: "test_session".into(),
+        };
+        let state = AppState {
+            users: std::sync::Arc::new(users),
+            sessions,
+            user_data,
+            session_bus: bus,
+            config: std::sync::Arc::new(cfg),
+        };
+        (dir, state, projects_root)
+    }
+
+    async fn login(app: axum::Router, username: &str, password: &str) -> String {
+        let body = format!(r#"{{"username":"{username}","password":"{password}"}}"#);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/auth/login")
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200, "login failed");
+        extract_set_cookie(&resp).split(';').next().unwrap().to_string()
+    }
+
+    // ── Wiki tests ────────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn wiki_page_read_without_cookie_is_401() {
+        let (_dir, state, _root) = build_state_with_user_and_projects_root("alice", "pw");
+        let app = main_router(state);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/wiki/page?project_path=proj&page_path=wiki/foo.md")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 401);
+    }
+
+    #[tokio::test]
+    async fn wiki_page_read_returns_content_and_etag() {
+        let (_dir, state, _root) = build_state_with_user_and_projects_root("alice", "pw");
+        let app = main_router(state.clone());
+        let cookie = login(app.clone(), "alice", "pw").await;
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/wiki/page?project_path=proj&page_path=wiki/foo.md")
+                    .header("cookie", cookie)
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+
+        // ETag response header must be present.
+        let etag_header = resp
+            .headers()
+            .get(axum::http::header::ETAG)
+            .expect("ETag header present")
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert!(etag_header.starts_with('"'), "ETag should be quoted");
+        assert!(etag_header.ends_with('"'), "ETag should be quoted");
+
+        let body = to_bytes(resp.into_body(), 4096).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(v["content"].as_str().unwrap().contains("Hello world"));
+        let etag_in_body = v["etag"].as_str().unwrap();
+        assert_eq!(etag_in_body.len(), 16, "etag must be 16 hex chars");
+        // Body etag must match the stripped header value.
+        let stripped = etag_header.trim_matches('"');
+        assert_eq!(etag_in_body, stripped);
+    }
+
+    #[tokio::test]
+    async fn wiki_page_write_without_if_match_is_400() {
+        let (_dir, state, _root) = build_state_with_user_and_projects_root("alice", "pw");
+        let app = main_router(state.clone());
+        let cookie = login(app.clone(), "alice", "pw").await;
+
+        let body = serde_json::json!({
+            "project_path": "proj",
+            "page_path": "wiki/foo.md",
+            "content": "# Updated\n"
+        })
+        .to_string();
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/api/v1/wiki/page")
+                    .header("content-type", "application/json")
+                    .header("cookie", cookie)
+                    .body(axum::body::Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 400);
+        let body = to_bytes(resp.into_body(), 4096).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["error"]["code"], "BAD_REQUEST");
+    }
+
+    #[tokio::test]
+    async fn wiki_page_write_with_matching_etag_succeeds() {
+        let (_dir, state, _root) = build_state_with_user_and_projects_root("alice", "pw");
+        let app = main_router(state.clone());
+        let cookie = login(app.clone(), "alice", "pw").await;
+
+        // First read to get the current ETag.
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/wiki/page?project_path=proj&page_path=wiki/foo.md")
+                    .header("cookie", &cookie)
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let etag_header = resp
+            .headers()
+            .get(axum::http::header::ETAG)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+
+        // PUT with the correct If-Match.
+        let body = serde_json::json!({
+            "project_path": "proj",
+            "page_path": "wiki/foo.md",
+            "content": "# Updated\n\nNew content.\n"
+        })
+        .to_string();
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/api/v1/wiki/page")
+                    .header("content-type", "application/json")
+                    .header("cookie", &cookie)
+                    .header("if-match", &etag_header)
+                    .body(axum::body::Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let new_etag_header = resp
+            .headers()
+            .get(axum::http::header::ETAG)
+            .expect("new ETag in response")
+            .to_str()
+            .unwrap()
+            .to_string();
+
+        // Re-read: content and etag must be updated.
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/wiki/page?project_path=proj&page_path=wiki/foo.md")
+                    .header("cookie", &cookie)
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let body = to_bytes(resp.into_body(), 4096).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(v["content"].as_str().unwrap().contains("New content"));
+        // ETag must have changed from the original read.
+        assert_ne!(new_etag_header, etag_header);
+    }
+
+    #[tokio::test]
+    async fn wiki_page_write_with_stale_etag_returns_412() {
+        let (_dir, state, _root) = build_state_with_user_and_projects_root("alice", "pw");
+        let app = main_router(state.clone());
+        let cookie = login(app.clone(), "alice", "pw").await;
+
+        let body = serde_json::json!({
+            "project_path": "proj",
+            "page_path": "wiki/foo.md",
+            "content": "# Conflicting update\n"
+        })
+        .to_string();
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/api/v1/wiki/page")
+                    .header("content-type", "application/json")
+                    .header("cookie", &cookie)
+                    .header("if-match", "\"0000000000000000\"") // wrong etag
+                    .body(axum::body::Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 412);
+        let body = to_bytes(resp.into_body(), 4096).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["error"]["code"], "WIKI_PAGE_STALE");
+        assert!(v["error"]["details"]["current_etag"].is_string());
+    }
+
+    #[tokio::test]
+    async fn wiki_page_rejects_path_traversal() {
+        let (_dir, state, _root) = build_state_with_user_and_projects_root("alice", "pw");
+        let app = main_router(state.clone());
+        let cookie = login(app.clone(), "alice", "pw").await;
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/wiki/page?project_path=proj&page_path=../../../etc/passwd")
+                    .header("cookie", cookie)
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 400);
+        let body = to_bytes(resp.into_body(), 4096).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["error"]["code"], "PATH_ESCAPE");
     }
 }
