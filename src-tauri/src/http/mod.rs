@@ -7,6 +7,7 @@
 //! - `embed`: rust-embed frontend serving (Task 2.10).
 
 pub mod error;
+pub mod auth;
 
 use std::sync::Arc;
 
