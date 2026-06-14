@@ -22,10 +22,11 @@ pub mod config;
 pub mod fs_browser;
 pub mod files;
 pub mod proxy;
+pub mod agent;
 
 use std::sync::Arc;
 
-use axum::middleware::from_fn_with_state;
+use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::get;
 use axum::{Json, Router};
 use serde_json::json;
@@ -48,6 +49,15 @@ pub struct AppState {
 }
 
 pub fn main_router(state: AppState) -> Router {
+    // Agent routes: handlers don't extract AuthUser themselves (so they work
+    // auth-free on the legacy listener). On the main listener we wrap them
+    // with both the session middleware (to inject User) and require_auth
+    // (to reject unauthenticated requests).
+    let authed_agent = agent::agent_router()
+        .route_layer(from_fn(auth::require_auth_middleware))
+        .route_layer(from_fn_with_state(state.clone(), auth::session_middleware))
+        .with_state(state.clone());
+
     let authed = Router::new()
         .route("/api/v1/health", get(health))
         .merge(auth::auth_router())
@@ -66,6 +76,7 @@ pub fn main_router(state: AppState) -> Router {
 
     Router::new()
         .merge(authed)
+        .merge(authed_agent)                       // agent routes with their own auth layers
         .fallback(embed::spa_fallback)
         // Cookie layer needs to be outermost so cookies are parsed before
         // the session middleware runs.
@@ -76,12 +87,13 @@ async fn health() -> Json<serde_json::Value> {
     Json(json!({"status": "ok"}))
 }
 
-/// Router for the legacy 127.0.0.1:19828 listener: same handlers as
-/// `main_router` but without the session middleware. Phase 4 will narrow
-/// this to the agent-facing subset.
+/// Router for the legacy 127.0.0.1:19828 listener: agent-facing endpoints
+/// only, without the session middleware (no auth required on this listener).
+/// The main listener serves the same /agent/* routes but behind session auth.
 pub fn legacy_router(state: AppState) -> Router {
     let r = Router::new()
         .route("/api/v1/health", get(health))
+        .merge(agent::agent_router())              // no route_layer = no auth
         .with_state(state);
     Router::new().merge(r).layer(CookieManagerLayer::new())
 }
@@ -1242,5 +1254,138 @@ mod tests {
         let body = to_bytes(resp.into_body(), 4096).await.unwrap();
         let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(v["error"]["code"], "NOT_FOUND");
+    }
+
+    // ── agent endpoint tests (Task 4.10) ──────────────────────────────────────
+
+    /// Helper: build state with a real projects_root that contains one valid project.
+    fn build_state_with_agent_project(
+        username: &str,
+        password: &str,
+    ) -> (TempDir, AppState, std::path::PathBuf) {
+        let dir = TempDir::new().unwrap();
+        let hash = hash_password(password).unwrap();
+        let users_path = dir.path().join("users.toml");
+        std::fs::write(
+            &users_path,
+            format!("[users.{username}]\npassword_hash = \"{hash}\"\n"),
+        )
+        .unwrap();
+        let users = crate::auth::users::Users::load(&users_path).unwrap();
+        let sessions =
+            crate::auth::sessions::Sessions::open(&dir.path().join("sessions")).unwrap();
+        let user_data = crate::storage::user_data::UserData::new(dir.path().to_path_buf());
+        let bus = crate::storage::session_bus::SessionBus::new();
+        let projects_root = dir.path().join("projects");
+        std::fs::create_dir_all(&projects_root).unwrap();
+
+        // Create a minimal valid project.
+        let proj_dir = projects_root.join("myproj");
+        std::fs::create_dir_all(proj_dir.join("wiki")).unwrap();
+        std::fs::write(proj_dir.join("schema.md"), b"# Schema\n").unwrap();
+        std::fs::write(proj_dir.join("wiki/page.md"), b"# Page\n\nContent here.\n").unwrap();
+
+        let cfg = crate::config::ServerConfig {
+            port: 8080,
+            projects_root: projects_root.clone(),
+            data_root: dir.path().to_path_buf(),
+            legacy_19828_enabled: true,
+            session_cookie_name: "test_session".into(),
+        };
+        let state = AppState {
+            users: std::sync::Arc::new(users),
+            sessions,
+            user_data,
+            session_bus: bus,
+            config: std::sync::Arc::new(cfg),
+            llm_client: std::sync::Arc::new(crate::core::llm_client::LlmClient::new()),
+        };
+        (dir, state, projects_root)
+    }
+
+    #[tokio::test]
+    async fn agent_endpoints_on_main_listener_require_auth() {
+        let (_dir, state, _root) = build_state_with_agent_project("alice", "pw");
+        let app = main_router(state);
+        // Hit /api/v1/agent/projects without any session cookie → must be 401.
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/agent/projects")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 401);
+    }
+
+    #[tokio::test]
+    async fn agent_endpoints_on_legacy_listener_dont_require_auth() {
+        let (_dir, state, _root) = build_state_with_agent_project("alice", "pw");
+        let app = legacy_router(state);
+        // Hit /api/v1/agent/projects without any session cookie → must NOT be 401.
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/agent/projects")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let body = to_bytes(resp.into_body(), 4096).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(v["projects"].is_array());
+        // One valid project (myproj) should be listed.
+        assert_eq!(v["projects"].as_array().unwrap().len(), 1);
+        assert_eq!(v["projects"][0]["name"], "myproj");
+    }
+
+    #[tokio::test]
+    async fn agent_search_works_without_auth_on_legacy() {
+        let (_dir, state, _root) = build_state_with_agent_project("alice", "pw");
+        let app = legacy_router(state);
+        let body = serde_json::json!({
+            "project_path": "myproj",
+            "query": "Content"
+        })
+        .to_string();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/agent/search")
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let body = to_bytes(resp.into_body(), 4096).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(v["results"].is_array(), "expected results array in search response");
+    }
+
+    #[tokio::test]
+    async fn agent_file_path_escape_rejected_even_on_legacy() {
+        let (_dir, state, _root) = build_state_with_agent_project("alice", "pw");
+        let app = legacy_router(state);
+        // Try to escape outside projects_root — path safety must hold regardless of auth.
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/agent/file?project_path=myproj&path=../../../etc/passwd")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 400);
+        let body = to_bytes(resp.into_body(), 4096).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["error"]["code"], "PATH_ESCAPE");
     }
 }

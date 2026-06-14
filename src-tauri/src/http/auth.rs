@@ -141,3 +141,19 @@ pub async fn session_middleware(
     }
     next.run(request).await
 }
+
+/// Middleware: enforce that a `User` is present in request extensions.
+///
+/// This is used for routes whose handlers do not extract `AuthUser` themselves
+/// (e.g. agent endpoints, which must remain auth-free on the legacy listener).
+/// On the main listener, mount this middleware via `route_layer` after
+/// `session_middleware` has already run.
+pub async fn require_auth_middleware(
+    request: axum::extract::Request,
+    next: Next,
+) -> Response {
+    if request.extensions().get::<User>().is_none() {
+        return ApiError::unauthenticated().into_response();
+    }
+    next.run(request).await
+}
