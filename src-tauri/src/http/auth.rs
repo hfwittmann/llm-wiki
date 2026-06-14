@@ -73,9 +73,16 @@ async fn logout(
         // the client cookie below.
         let _ = state.sessions.delete(cookie.value());
     }
-    let mut empty = Cookie::new(state.config.session_cookie_name.clone(), "");
-    empty.set_path("/");
-    empty.set_max_age(tower_cookies::cookie::time::Duration::seconds(0));
+    // Mirror the login cookie's attributes minus Max-Age so the browser
+    // recognizes this as the same cookie and deletes it cleanly. RFC 6265
+    // only requires matching Name+Domain+Path for deletion, but matching
+    // all the security attrs avoids confusing strict cookie audits.
+    let empty = Cookie::build((state.config.session_cookie_name.clone(), ""))
+        .http_only(true)
+        .same_site(SameSite::Lax)
+        .max_age(tower_cookies::cookie::time::Duration::seconds(0))
+        .path("/")
+        .build();
     cookies.add(empty);
     Ok(StatusCode::NO_CONTENT)
 }

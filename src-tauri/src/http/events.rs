@@ -23,12 +23,16 @@ pub async fn events_handler(
     cookies: Cookies,
     _headers: HeaderMap,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, ApiError> {
+    // We re-read the cookie here rather than using the AuthUser extractor
+    // because SessionBus is keyed by session_id, and AuthUser doesn't carry
+    // it. The middleware already validated the cookie before this handler
+    // ran; the re-lookup below is belt-and-suspenders against a session
+    // that expired in the tiny window between middleware and handler.
     let cookie = cookies
         .get(&state.config.session_cookie_name)
         .ok_or_else(ApiError::unauthenticated)?;
     let session_id = cookie.value().to_string();
 
-    // Confirm the session is valid before opening the long-lived stream.
     if state.sessions.lookup(&session_id).is_none() {
         return Err(ApiError::unauthenticated());
     }
