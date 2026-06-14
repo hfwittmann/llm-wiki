@@ -144,7 +144,7 @@ async fn send(
     let sink = Arc::new(SessionEventSink::new(state.session_bus.clone(), session_id))
         as Arc<dyn EventSink + Send + Sync + 'static>;
 
-    let request_id = short_random_id();
+    let request_id = uuid_short();
 
     // Clone everything the background task needs before moving into `spawn`.
     let client = state.llm_client.clone();
@@ -234,7 +234,7 @@ async fn send(
 /// ```json
 /// { "llm": { "base_url": "...", "api_key": "...", "model": "..." } }
 /// ```
-fn provider_config_from_user(cfg: &serde_json::Value) -> Result<ProviderConfig, String> {
+pub(crate) fn provider_config_from_user(cfg: &serde_json::Value) -> Result<ProviderConfig, String> {
     let llm = cfg.get("llm").ok_or("missing llm config")?;
     let base_url = llm
         .get("base_url")
@@ -268,7 +268,7 @@ fn provider_config_from_user(cfg: &serde_json::Value) -> Result<ProviderConfig, 
 }
 
 /// Generate a short random identifier (11 URL-safe base64 chars ≈ 8 bytes).
-fn short_random_id() -> String {
+pub(crate) fn uuid_short() -> String {
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
     use rand::RngCore;
     let mut bytes = [0u8; 8];

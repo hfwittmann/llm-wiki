@@ -21,6 +21,7 @@ pub mod chat;
 pub mod config;
 pub mod fs_browser;
 pub mod files;
+pub mod proxy;
 
 use std::sync::Arc;
 
@@ -57,6 +58,7 @@ pub fn main_router(state: AppState) -> Router {
         .merge(config::config_router())
         .merge(fs_browser::fs_browser_router())
         .merge(files::files_router())
+        .merge(proxy::proxy_router())
         .route("/api/v1/events", get(events::events_handler))
         // Session middleware: extract cookie, inject User if valid.
         .route_layer(from_fn_with_state(state.clone(), auth::session_middleware))
