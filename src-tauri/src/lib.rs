@@ -1,5 +1,6 @@
 mod api_server;
 pub mod auth;
+pub mod config;
 mod clip_server;
 mod commands;
 mod panic_guard;
