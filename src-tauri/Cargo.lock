@@ -4628,6 +4628,7 @@ dependencies = [
  "image",
  "lancedb",
  "md-5",
+ "mime_guess",
  "notify",
  "office_oxide",
  "parking_lot 0.12.5",

@@ -9,6 +9,7 @@
 pub mod error;
 pub mod auth;
 pub mod events;
+pub mod embed;
 
 use std::sync::Arc;
 
@@ -44,6 +45,7 @@ pub fn main_router(state: AppState) -> Router {
 
     Router::new()
         .merge(authed)
+        .fallback(embed::spa_fallback)
         // Cookie layer needs to be outermost so cookies are parsed before
         // the session middleware runs.
         .layer(CookieManagerLayer::new())
@@ -345,5 +347,25 @@ mod tests {
         assert!(bus.registered_count() >= 1, "session was not registered in bus");
 
         handle.abort();
+    }
+
+    #[tokio::test]
+    async fn unknown_route_falls_back_to_index_html() {
+        let (_dir, state) = build_state_with_user("alice", "pw");
+        let app = main_router(state);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/some/spa/route")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let body = to_bytes(resp.into_body(), 16384).await.unwrap();
+        let s = String::from_utf8_lossy(&body);
+        assert!(s.contains("<!DOCTYPE html>"));
+        assert!(s.contains("<html"));
     }
 }
