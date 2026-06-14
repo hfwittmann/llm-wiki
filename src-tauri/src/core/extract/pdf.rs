@@ -32,8 +32,8 @@ pub fn extract_markdown(
 ) -> Result<String, ExtractError> {
     use pdfium_render::prelude::*;
 
-    let _guard = crate::commands::fs::lock_pdfium();
-    let pdfium = crate::commands::fs::pdfium().map_err(|e| ExtractError::Pdfium(e))?;
+    let _guard = crate::core::files::lock_pdfium();
+    let pdfium = crate::core::files::pdfium().map_err(|e| ExtractError::Pdfium(e))?;
     let doc = pdfium.load_pdf_from_file(path, None).map_err(|e| match e {
         PdfiumError::PdfiumLibraryInternalError(PdfiumInternalError::PasswordError) => {
             ExtractError::Pdfium(format!(
@@ -145,8 +145,8 @@ pub fn extract_markdown(
 pub fn extract_images(path: &str, options: &ExtractOptions) -> Result<Vec<ExtractedImage>, ExtractError> {
     use pdfium_render::prelude::*;
 
-    let _guard = crate::commands::fs::lock_pdfium();
-    let pdfium = crate::commands::fs::pdfium().map_err(|e| ExtractError::Pdfium(e))?;
+    let _guard = crate::core::files::lock_pdfium();
+    let pdfium = crate::core::files::pdfium().map_err(|e| ExtractError::Pdfium(e))?;
     let doc = pdfium
         .load_pdf_from_file(path, None)
         .map_err(|e| ExtractError::Pdfium(format!("Failed to open PDF '{path}': {e}")))?;
@@ -228,8 +228,8 @@ pub fn extract_and_save_images(
 ) -> Result<Vec<SavedImage>, ExtractError> {
     use pdfium_render::prelude::*;
 
-    let _guard = crate::commands::fs::lock_pdfium();
-    let pdfium = crate::commands::fs::pdfium().map_err(|e| ExtractError::Pdfium(e))?;
+    let _guard = crate::core::files::lock_pdfium();
+    let pdfium = crate::core::files::pdfium().map_err(|e| ExtractError::Pdfium(e))?;
     let doc = pdfium
         .load_pdf_from_file(path, None)
         .map_err(|e| ExtractError::Pdfium(format!("Failed to open PDF '{path}': {e}")))?;

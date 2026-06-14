@@ -9,5 +9,8 @@
 
 pub mod events;
 pub mod extract;
+pub mod files;
+pub mod fs_ops;
 pub mod search;
 pub mod vectorstore;
+pub mod wiki;
