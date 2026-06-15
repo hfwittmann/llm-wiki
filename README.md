@@ -488,11 +488,11 @@ my-wiki/
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=nashsu%2Fllm_wiki&type=date&legend=top-left">
+<a href="https://www.star-history.com/?repos=hfwittmann%2Fllm-wiki,nashsu%2Fllm_wiki&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=nashsu/llm_wiki&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=nashsu/llm_wiki&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=nashsu/llm_wiki&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=hfwittmann/llm-wiki,nashsu/llm_wiki&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=hfwittmann/llm-wiki,nashsu/llm_wiki&type=date&legend=top-left" />
+   <img alt="Star History Chart (this fork vs. upstream)" src="https://api.star-history.com/chart?repos=hfwittmann/llm-wiki,nashsu/llm_wiki&type=date&legend=top-left" />
  </picture>
 </a>
 
