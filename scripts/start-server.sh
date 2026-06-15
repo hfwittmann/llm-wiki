@@ -22,8 +22,10 @@ if ! command -v cargo >/dev/null 2>&1; then
 fi
 
 # Defaults — permanent locations under the user's home.
-: "${LLM_WIKI_DATA_ROOT:=$HOME/Documents/llm-wiki-data}"
-: "${LLM_WIKI_PROJECTS_ROOT:=$HOME/Documents/llm-wiki-projects}"
+# Single parent folder with `data/` and `projects/` subdirs.
+: "${LLM_WIKI_ROOT:=$HOME/Documents/llm-wiki}"
+: "${LLM_WIKI_DATA_ROOT:=$LLM_WIKI_ROOT/data}"
+: "${LLM_WIKI_PROJECTS_ROOT:=$LLM_WIKI_ROOT/projects}"
 : "${LLM_WIKI_PORT:=8080}"
 : "${LLM_WIKI_LEGACY_19828_ENABLED:=false}"
 
