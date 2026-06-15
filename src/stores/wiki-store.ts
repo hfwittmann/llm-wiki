@@ -18,7 +18,7 @@ export interface ReasoningConfig {
 }
 
 interface LlmConfig {
-  provider: "openai" | "anthropic" | "google" | "azure" | "ollama" | "custom" | "minimax" | "claude-code" | "codex-cli"
+  provider: "openai" | "anthropic" | "google" | "azure" | "ollama" | "custom" | "minimax"
   apiKey: string
   model: string
   ollamaUrl: string
@@ -28,14 +28,8 @@ interface LlmConfig {
   maxContextSize: number // max context window in characters
   apiMode?: CustomApiMode
   reasoning?: ReasoningConfig
-  /**
-   * Local CLI providers only. When true, LLM Wiki asks Claude/Codex CLI
-   * to ignore user-level rules/config/MCP/tool state where the CLI exposes
-   * such controls. Default false preserves existing advanced-user setups.
-   */
+  /** @deprecated Kept for backward-compat deserialization; ignored at runtime. */
   localCliIsolation?: boolean
-  /** Codex CLI provider only. Overall subprocess timeout in minutes. */
-  codexCliTimeoutMinutes?: number
 }
 
 export type SearchProvider = "tavily" | "serpapi" | "searxng" | "ollama" | "none"
@@ -167,13 +161,6 @@ interface ProxyConfig {
   bypassLocal: boolean
 }
 
-interface ScheduledImportConfig {
-  enabled: boolean
-  path: string // 监控目录的相对路径（相对于项目根目录），空字符串表示使用默认的 "raw"
-  interval: number // 扫描间隔（分钟）
-  lastScan: number | null // 上次扫描时间戳
-}
-
 /**
  * Local HTTP API server config. Read by the Rust `api_server` module on
  * every request via `load_app_state` (5s cache). The Rust side is the
@@ -201,7 +188,6 @@ interface ApiConfig {
 export type CloseBehavior = "ask" | "minimize" | "exit"
 
 export interface GeneralConfig {
-  autostart: boolean
   closeBehavior: CloseBehavior
 }
 
@@ -284,8 +270,6 @@ export interface ProviderOverride {
   apiMode?: CustomApiMode
   maxContextSize?: number
   reasoning?: ReasoningConfig
-  localCliIsolation?: boolean
-  codexCliTimeoutMinutes?: number
 }
 
 export type ProviderConfigs = Record<string, ProviderOverride>
@@ -331,7 +315,6 @@ interface WikiState {
   multimodalConfig: MultimodalConfig
   outputLanguage: OutputLanguage
   proxyConfig: ProxyConfig
-  scheduledImportConfig: ScheduledImportConfig
   sourceWatchConfig: SourceWatchConfig
   mineruConfig: MineruConfig
   apiConfig: ApiConfig
@@ -354,7 +337,6 @@ interface WikiState {
   setMultimodalConfig: (config: MultimodalConfig) => void
   setOutputLanguage: (lang: OutputLanguage) => void
   setProxyConfig: (config: ProxyConfig) => void
-  setScheduledImportConfig: (config: ScheduledImportConfig) => void
   setSourceWatchConfig: (config: SourceWatchConfig) => void
   setMineruConfig: (config: MineruConfig) => void
   setApiConfig: (config: ApiConfig) => void
@@ -380,7 +362,6 @@ export const useWikiStore = create<WikiState>((set) => ({
     customEndpoint: "",
     azureApiVersion: "2024-10-21",
     reasoning: { mode: "auto" },
-    localCliIsolation: false,
   },
   providerConfigs: {},
   activePresetId: null,
@@ -445,13 +426,6 @@ export const useWikiStore = create<WikiState>((set) => ({
     bypassLocal: true,
   },
 
-  scheduledImportConfig: {
-    enabled: false,
-    path: "",
-    interval: 60,
-    lastScan: null,
-  },
-
   sourceWatchConfig: DEFAULT_SOURCE_WATCH_CONFIG,
   mineruConfig: { enabled: false, token: "", modelVersion: "vlm" },
 
@@ -468,7 +442,6 @@ export const useWikiStore = create<WikiState>((set) => ({
   },
 
   generalConfig: {
-    autostart: false,
     closeBehavior: "minimize",
   },
 
@@ -480,7 +453,6 @@ export const useWikiStore = create<WikiState>((set) => ({
   setMultimodalConfig: (multimodalConfig) => set({ multimodalConfig }),
   setOutputLanguage: (outputLanguage) => set({ outputLanguage }),
   setProxyConfig: (proxyConfig) => set({ proxyConfig }),
-  setScheduledImportConfig: (scheduledImportConfig) => set({ scheduledImportConfig }),
   setSourceWatchConfig: (sourceWatchConfig) => set({ sourceWatchConfig }),
   setMineruConfig: (mineruConfig) => set({ mineruConfig }),
   setApiConfig: (apiConfig) => set({ apiConfig }),
@@ -488,4 +460,4 @@ export const useWikiStore = create<WikiState>((set) => ({
   bumpDataVersion: () => set((state) => ({ dataVersion: state.dataVersion + 1 })),
 }))
 
-export type { WikiState, LlmConfig, SearchApiConfig, EmbeddingConfig, MultimodalConfig, OutputLanguage, ProxyConfig, ScheduledImportConfig, SourceWatchConfig, ApiConfig }
+export type { WikiState, LlmConfig, SearchApiConfig, EmbeddingConfig, MultimodalConfig, OutputLanguage, ProxyConfig, SourceWatchConfig, ApiConfig }

@@ -32,18 +32,6 @@ describe("hasUsableLlm", () => {
     ).toBe(true)
   })
 
-  it("returns true for claude-code with no API key", () => {
-    expect(
-      hasUsableLlm({ provider: "claude-code", apiKey: "" }),
-    ).toBe(true)
-  })
-
-  it("returns true for codex-cli with no API key", () => {
-    expect(
-      hasUsableLlm({ provider: "codex-cli", apiKey: "" }),
-    ).toBe(true)
-  })
-
   it("returns false for openai with no API key", () => {
     expect(
       hasUsableLlm({ provider: "openai", apiKey: "" }),
@@ -83,11 +71,9 @@ describe("hasUsableLlm", () => {
     ).toBe(false)
   })
 
-  it("PROVIDERS_WITHOUT_KEY covers the locally-running / CLI-auth providers", () => {
+  it("PROVIDERS_WITHOUT_KEY covers the locally-running providers", () => {
     expect(PROVIDERS_WITHOUT_KEY.has("ollama")).toBe(true)
     expect(PROVIDERS_WITHOUT_KEY.has("custom")).toBe(true)
-    expect(PROVIDERS_WITHOUT_KEY.has("claude-code")).toBe(true)
-    expect(PROVIDERS_WITHOUT_KEY.has("codex-cli")).toBe(true)
   })
 
   it("PROVIDERS_WITHOUT_KEY does not include hosted-API providers", () => {
@@ -111,8 +97,6 @@ describe("hasUsableLlm", () => {
       "ollama",
       "custom",
       "minimax",
-      "claude-code",
-      "codex-cli",
     ]
     for (const p of allProviders) {
       const inNoKey = PROVIDERS_WITHOUT_KEY.has(p)

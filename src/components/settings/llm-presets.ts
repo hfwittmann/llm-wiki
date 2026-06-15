@@ -18,8 +18,6 @@ export type Provider =
   | "ollama"
   | "custom"
   | "minimax"
-  | "claude-code"
-  | "codex-cli"
 
 export interface LlmPreset {
   /** Stable id used as the dropdown value. */
@@ -78,39 +76,6 @@ export const LLM_PRESETS: LlmPreset[] = [
       "claude-sonnet-4-20250514",
       "claude-3-5-sonnet-20241022",
       "claude-3-5-haiku-20241022",
-    ],
-    suggestedContextSize: 200000,
-  },
-  {
-    id: "claude-code-cli",
-    label: "Claude Code CLI (local)",
-    hint: "Uses the local `claude` binary — no API key needed",
-    provider: "claude-code",
-    defaultModel: "claude-sonnet-4-6",
-    // Mirrors anthropic preset; the CLI forwards to the same Anthropic
-    // backend, so model ids are identical. Users with a subscription
-    // can pick Opus/Sonnet/Haiku here without paying an API key bill.
-    suggestedModels: [
-      "claude-opus-4-7",
-      "claude-opus-4-6",
-      "claude-sonnet-4-6",
-      "claude-sonnet-4-5-20250929",
-      "claude-haiku-4-5-20251001",
-    ],
-    suggestedContextSize: 200000,
-  },
-  {
-    id: "codex-cli",
-    label: "Codex CLI (local)",
-    hint: "Uses the local `codex` binary — no API key needed",
-    provider: "codex-cli",
-    defaultModel: "gpt-5.4-mini",
-    suggestedModels: [
-      "gpt-5.4-mini",
-      "gpt-5.4",
-      "gpt-5.3-codex",
-      "gpt-5.3-codex-spark",
-      "gpt-5.2",
     ],
     suggestedContextSize: 200000,
   },

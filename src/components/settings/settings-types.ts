@@ -9,7 +9,7 @@ import type { AzureModelFamily, CloseBehavior, MineruModelVersion, ReasoningConf
  */
 export interface SettingsDraft {
   // LLM provider
-  provider: "openai" | "anthropic" | "google" | "azure" | "ollama" | "custom" | "minimax" | "claude-code" | "codex-cli"
+  provider: "openai" | "anthropic" | "google" | "azure" | "ollama" | "custom" | "minimax"
   apiKey: string
   model: string
   ollamaUrl: string
@@ -19,6 +19,7 @@ export interface SettingsDraft {
   maxContextSize: number
   apiMode: CustomApiMode | undefined
   reasoning: ReasoningConfig | undefined
+  /** @deprecated Kept for backward-compat; ignored at runtime. */
   localCliIsolation: boolean
 
   // Embedding
@@ -38,7 +39,7 @@ export interface SettingsDraft {
   // Multimodal (image captioning at ingest time)
   multimodalEnabled: boolean
   multimodalUseMainLlm: boolean
-  multimodalProvider: "openai" | "anthropic" | "google" | "azure" | "ollama" | "custom" | "minimax" | "claude-code" | "codex-cli"
+  multimodalProvider: "openai" | "anthropic" | "google" | "azure" | "ollama" | "custom" | "minimax"
   multimodalApiKey: string
   multimodalModel: string
   multimodalOllamaUrl: string
@@ -59,18 +60,12 @@ export interface SettingsDraft {
   proxyUrl: string
   proxyBypassLocal: boolean
 
-  // Scheduled Import
-  scheduledImportEnabled: boolean
-  scheduledImportPath: string
-  scheduledImportInterval: number // minutes
-
   // UI
   uiLanguage: string
   theme: "light" | "dark" | "system"
   zoomLevel: number
 
   // General app behavior
-  autostart: boolean
   closeBehavior: CloseBehavior
 
   // Source folder auto watch

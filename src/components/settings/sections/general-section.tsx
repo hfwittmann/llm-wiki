@@ -37,29 +37,10 @@ export function GeneralSection({ draft, setDraft }: Props) {
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
           {t("settings.sections.general.description", {
-            defaultValue: "Startup and window behavior for the desktop app.",
+            defaultValue: "Window behavior for the desktop app.",
           })}
         </p>
       </div>
-
-      <label className="flex items-start gap-2">
-        <input
-          type="checkbox"
-          checked={draft.autostart}
-          onChange={(e) => setDraft("autostart", e.target.checked)}
-          className="mt-0.5 h-4 w-4"
-        />
-        <div className="space-y-1">
-          <span className="text-sm">
-            {t("settings.sections.general.autostart", { defaultValue: "Launch at system startup" })}
-          </span>
-          <p className="text-xs text-muted-foreground">
-            {t("settings.sections.general.autostartHint", {
-              defaultValue: "Starts LLM Wiki automatically after you sign in to this computer.",
-            })}
-          </p>
-        </div>
-      </label>
 
       <div className="space-y-2">
         <Label>{t("settings.sections.general.closeBehavior", { defaultValue: "When closing the window" })}</Label>

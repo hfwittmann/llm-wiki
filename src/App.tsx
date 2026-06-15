@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react"
 import { open } from "@tauri-apps/plugin-dialog"
 import { invoke } from "@tauri-apps/api/core"
-import { disable as disableAutostart, enable as enableAutostart, isEnabled as isAutostartEnabled } from "@tauri-apps/plugin-autostart"
 import i18n from "@/i18n"
 import { useWikiStore } from "@/stores/wiki-store"
 import { useReviewStore } from "@/stores/review-store"
@@ -9,7 +8,7 @@ import { useLintStore } from "@/stores/lint-store"
 import { useChatStore } from "@/stores/chat-store"
 import { BASE_FONT_SIZE_PX, useZoomStore } from "@/stores/zoom-store"
 import { listDirectory, openProject } from "@/commands/fs"
-import { getLastProject, getRecentProjects, saveLastProject, loadLlmConfig, loadLanguage, loadSearchApiConfig, loadEmbeddingConfig, loadMineruConfig, loadMultimodalConfig, loadOutputLanguage, loadProviderConfigs, loadActivePresetId, loadProxyConfig, loadScheduledImportConfig, saveScheduledImportConfig, loadSourceWatchConfig, loadApiConfig, loadGeneralConfig, loadZoomLevel } from "@/lib/project-store"
+import { getLastProject, getRecentProjects, saveLastProject, loadLlmConfig, loadLanguage, loadSearchApiConfig, loadEmbeddingConfig, loadMineruConfig, loadMultimodalConfig, loadOutputLanguage, loadProviderConfigs, loadActivePresetId, loadProxyConfig, loadSourceWatchConfig, loadApiConfig, loadGeneralConfig, loadZoomLevel } from "@/lib/project-store"
 import { loadReviewItems, loadLintItems, loadChatHistory } from "@/lib/persist"
 import { setupAutoSave } from "@/lib/auto-save"
 import { startClipWatcher } from "@/lib/clip-watcher"
@@ -274,16 +273,6 @@ function App() {
         } catch (err) {
           console.warn("[general] failed to hydrate close behavior:", err)
         }
-        try {
-          const currentAutostart = await isAutostartEnabled()
-          if (savedGeneral.autostart && !currentAutostart) {
-            await enableAutostart()
-          } else if (!savedGeneral.autostart && currentAutostart) {
-            await disableAutostart()
-          }
-        } catch (err) {
-          console.warn("[general] failed to sync autostart:", err)
-        }
         const savedLang = await loadLanguage()
         if (savedLang) {
           await i18n.changeLanguage(savedLang)
@@ -346,41 +335,6 @@ function App() {
           console.error("Failed to restore dedup queue:", err)
         )
       })
-      // Load per-project scheduled import config
-      try {
-        const savedScheduledImport = await loadScheduledImportConfig(proj.path)
-        if (savedScheduledImport) {
-          // Migrate relative path to absolute (backward compatibility)
-          let path = savedScheduledImport.path
-          if (path && !path.startsWith("/") && !path.match(/^[a-zA-Z]:[/\\]/)) {
-            path = `${proj.path}/${path}`
-          }
-          useWikiStore.getState().setScheduledImportConfig({
-            ...savedScheduledImport,
-            path,
-          })
-        } else {
-          // Reset to default for new projects
-          useWikiStore.getState().setScheduledImportConfig({
-            enabled: false,
-            path: `${proj.path}/raw/sources`,
-            interval: 60,
-            lastScan: null,
-          })
-        }
-      } catch {
-        // ignore
-      }
-      // Start scheduled import if enabled
-      const scheduledImportConfig = useWikiStore.getState().scheduledImportConfig
-      if (scheduledImportConfig.enabled && scheduledImportConfig.path && scheduledImportConfig.interval > 0) {
-        import("@/lib/scheduled-import").then(({ startScheduledImport }) => {
-          startScheduledImport(proj, scheduledImportConfig)
-        }).catch((err) =>
-          console.error("Failed to start scheduled import:", err)
-        )
-      }
-
       // Start project source watch if enabled
       import("@/lib/project-file-sync").then(async ({ startProjectFileSync, stopProjectFileSync }) => {
         const config = await loadSourceWatchConfig(proj.id)
@@ -482,18 +436,6 @@ function App() {
   }
 
   async function handleSwitchProject() {
-    // Stop scheduled import before switching projects
-    import("@/lib/scheduled-import").then(({ stopScheduledImport }) => {
-      stopScheduledImport()
-    }).catch(() => {})
-
-    // Save current project's scheduled import config before clearing
-    const currentProject = useWikiStore.getState().project
-    if (currentProject) {
-      const currentConfig = useWikiStore.getState().scheduledImportConfig
-      saveScheduledImportConfig(currentProject.path, currentConfig).catch(() => {})
-    }
-
     // Flush outgoing project's review/lint/chat to disk and suspend auto-save
     // before reset empties the stores. resumeAutoSave() runs when the next
     // project opens via handleProjectOpened.

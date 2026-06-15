@@ -159,10 +159,6 @@ export async function captionImage(
   signal?: AbortSignal,
   options?: CaptionOptions,
 ): Promise<string> {
-  if (llmConfig.provider === "codex-cli") {
-    throw new Error("Codex CLI transport does not support image input for captioning yet.")
-  }
-
   // Pick the context-aware prompt iff EITHER side has non-trivial
   // content. Whitespace-only context is treated as "no context" so a
   // caller passing untrimmed slices doesn't accidentally upgrade to
