@@ -15,6 +15,7 @@ import { normalizePath } from "@/lib/path-utils"
 import { OUTPUT_LANGUAGE_OPTIONS } from "@/lib/output-language-options"
 import { useWikiStore, type OutputLanguage } from "@/stores/wiki-store"
 import { saveOutputLanguage } from "@/lib/project-store"
+import { FolderBrowserDialog } from "@/components/layout/folder-browser-dialog"
 
 interface CreateProjectDialogProps {
   open: boolean
@@ -35,14 +36,11 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreated }: C
   const [language, setLanguage] = useState<string>("")
   const [error, setError] = useState("")
   const [creating, setCreating] = useState(false)
+  const [showBrowser, setShowBrowser] = useState(false)
   const setOutputLanguage = useWikiStore((s) => s.setOutputLanguage)
 
-  async function handleBrowse() {
-    // TODO(5.7): replace with FolderBrowserDialog when implemented.
-    const selected = window.prompt(t("project.browse"))
-    if (selected) {
-      setPath(selected)
-    }
+  function handleBrowse() {
+    setShowBrowser(true)
   }
 
   async function handleCreate() {
@@ -89,6 +87,13 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreated }: C
   }
 
   return (
+    <>
+    <FolderBrowserDialog
+      open={showBrowser}
+      onClose={() => setShowBrowser(false)}
+      onSelect={(selectedPath) => setPath(selectedPath)}
+      title={t("project.browse")}
+    />
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] grid-rows-[auto_1fr_auto] overflow-hidden">
         <DialogHeader>
@@ -153,5 +158,6 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreated }: C
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    </>
   )
 }

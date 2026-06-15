@@ -16,6 +16,7 @@ import {
   enqueueSourceIngest,
   importSourceFolder,
 } from "@/lib/source-lifecycle"
+import { FolderBrowserDialog } from "@/components/layout/folder-browser-dialog"
 
 const SOURCE_TREE_INITIAL_ROWS = 160
 const SOURCE_TREE_LOAD_BATCH = 160
@@ -47,6 +48,7 @@ export function SourcesView() {
    *      anchored here is the right scope.
    */
   const [pendingDeletePath, setPendingDeletePath] = useState<string | null>(null)
+  const [showFolderBrowser, setShowFolderBrowser] = useState(false)
 
   // Auto-disarm: 5 seconds without a second click resets the
   // pending state. Prevents a stale armed button from firing if
@@ -100,14 +102,8 @@ export function SourcesView() {
     window.alert("File picker coming soon. Use the folder import or drag & drop when available.")
   }
 
-  async function handleImportFolder() {
+  async function handleFolderSelected(selected: string) {
     if (!project) return
-
-    // TODO(5.7): replace with FolderBrowserDialog when implemented.
-    const selected = window.prompt(t("sources.importSourceFolder"))
-
-    if (!selected || typeof selected !== "string") return
-
     setImporting(true)
     try {
       await importSourceFolder(project, selected, llmConfig, sourceWatchConfig)
@@ -117,6 +113,11 @@ export function SourcesView() {
     } finally {
       setImporting(false)
     }
+  }
+
+  function handleImportFolder() {
+    if (!project) return
+    setShowFolderBrowser(true)
   }
 
   async function handleOpenSource(node: FileNode) {
@@ -212,6 +213,12 @@ export function SourcesView() {
 
   return (
     <TooltipProvider delay={300}>
+      <FolderBrowserDialog
+        open={showFolderBrowser}
+        onClose={() => setShowFolderBrowser(false)}
+        onSelect={handleFolderSelected}
+        title={t("sources.importSourceFolder")}
+      />
       <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b px-4 py-3">
         <h2 className="text-sm font-semibold">{t("sources.title")}</h2>
