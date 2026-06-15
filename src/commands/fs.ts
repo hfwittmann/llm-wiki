@@ -17,24 +17,32 @@ interface RawProject {
  * string. The `extractImages` option is not supported server-side (the server
  * handles image extraction internally during ingest).
  */
+// Extensions that the server can extract plain text from via pdfium /
+// office parsers. Read via /api/v1/files/extracted-text rather than
+// /raw — raw would return MB of binary that locks up the browser.
+const EXTRACTED_TEXT_EXTS = new Set([
+  "pdf",
+  "doc",
+  "docx",
+  "pptx",
+  "xls",
+  "xlsx",
+  "odt",
+  "ods",
+  "odp",
+])
+
 export async function readFile(
   path: string,
   options?: { extractImages?: boolean },
 ): Promise<string> {
-  // Wiki page paths: the server expects project_path + page_path.
-  // The legacy callers pass an absolute path. We cannot split it here without
-  // knowing the project root; fall back to the raw file endpoint which takes
-  // project_path + relative path — but since the legacy callers pass an
-  // absolute path, we use the files/raw endpoint which is parameterized
-  // by project_path + path (both come from outside). The absolute path is
-  // passed through for now; Task 5.4 will update callers to pass both
-  // project_path and a relative page_path separately.
-  //
-  // TODO(5.4): split callers to pass (projectPath, relativePath) so we can
-  // route wiki pages to /wiki/page and raw files to /files/raw.
-  void options // extractImages is handled server-side during ingest
+  void options // extractImages was handled server-side during ingest in the desktop pipeline
+  const ext = path.split(".").pop()?.toLowerCase() ?? ""
+  const endpoint = EXTRACTED_TEXT_EXTS.has(ext)
+    ? "/api/v1/files/extracted-text"
+    : "/api/v1/files/raw"
   const qs = new URLSearchParams({ path })
-  const text = await apiCall<string>("GET", `/api/v1/files/raw?${qs.toString()}`)
+  const text = await apiCall<string>("GET", `${endpoint}?${qs.toString()}`)
   return text
 }
 

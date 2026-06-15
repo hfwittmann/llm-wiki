@@ -147,16 +147,8 @@ export function getFileExtension(filePath: string): string {
   return fileName.includes(".") ? fileName.split(".").pop()?.toLowerCase() ?? "" : ""
 }
 
-export function isExtractedTextPreviewFile(_filePath: string): boolean {
-  // Browser/LAN-port disabled: the legacy Tauri path used pdfium-extracted
-  // text as a text-only preview for PDF/DOCX/etc. The HTTP /files/raw
-  // endpoint streams raw bytes (no server-side text extraction), so loading
-  // a 1+ MB binary as a string locks up the browser. Returning false here
-  // makes the preview-panel hit the binary short-circuit and skip readFile
-  // for these types; binary preview UI (PDF embed via fileRawUrl) handles
-  // rendering. Once a /files/extracted-text endpoint exists, this can be
-  // restored to the original extension-set lookup.
-  return false
+export function isExtractedTextPreviewFile(filePath: string): boolean {
+  return EXTRACTED_TEXT_PREVIEW_EXTENSIONS.has(getFileExtension(filePath))
 }
 
 export function isBinary(category: FileCategory): boolean {
