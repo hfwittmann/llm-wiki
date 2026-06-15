@@ -1,19 +1,21 @@
 /**
  * Image extraction orchestration for the ingest pipeline.
  *
- * Pure dispatch + path-shaping layer over the Rust commands
- * `extract_and_save_pdf_images_cmd` / `extract_and_save_office_images_cmd`.
- * Decides which command to call based on file extension, computes the
- * destination directory (`wiki/media/<source-slug>/`), and gives back
- * a small markdown snippet ready to paste into the LLM's source
- * context.
+ * Previously dispatched to Rust commands `extract_and_save_pdf_images_cmd` /
+ * `extract_and_save_office_images_cmd`. In the browser/LAN port, image
+ * extraction is handled server-side during ingest — the frontend does not call
+ * these commands directly.
  *
- * NOTE: this layer does NOT call any LLM (no captions yet — that's
- * Phase 3a). The alt text on each image is a placeholder; once
- * captioning lands, the same helper grows a `caption` field per
- * image and the markdown line uses that instead.
+ * `extractAndSaveSourceImages` is now a stub that returns [] (no-op). The
+ * rest of the helpers (path utilities, markdown-image-copy) remain functional
+ * for any callers that still use them for markdown-embedded local images, but
+ * the actual image copy operations are also stubs until the server exposes
+ * direct file-mutation endpoints (not planned for v1).
+ *
+ * TODO(5.9): if the frontend genuinely needs to trigger image extraction on
+ * an already-ingested source, add a server endpoint and wire it here.
  */
-import { invoke } from "@tauri-apps/api/core"
+// No @tauri-apps/api/core import — removed as part of Task 5.3 migration.
 import { copyFile, createDirectory, fileExists, readFileAsBase64 } from "@/commands/fs"
 import { getFileName, normalizePath } from "@/lib/path-utils"
 
@@ -166,35 +168,18 @@ export async function extractAndSaveSourceImages(
   const destDir = `${pp}/wiki/media/${slug}`
   const relTo = `${pp}/wiki`
 
-  try {
-    const images = await invoke<unknown[]>(
-      isPdf ? "extract_and_save_pdf_images_cmd" : "extract_and_save_office_images_cmd",
-      { sourcePath: sp, destDir, relTo },
-    )
-    // Rust's `SavedImage` is `#[serde(rename_all = "camelCase")]`,
-    // so the wire format uses `relPath` / `absPath` / `mimeType`.
-    // (Note: Tauri's IPC auto-camelCase applies only to command
-    // PARAMETER names, never to return-value field names — without
-    // the explicit serde attribute on the Rust struct, this filter
-    // would drop every item and return `[]` even when extraction
-    // wrote images to disk. We had that bug.)
-    return images
-      .filter((it): it is SavedImage => {
-        if (!it || typeof it !== "object") return false
-        const obj = it as Record<string, unknown>
-        return (
-          typeof obj.index === "number" &&
-          typeof obj.relPath === "string" &&
-          typeof obj.absPath === "string"
-        )
-      })
-  } catch (err) {
-    console.warn(
-      `[ingest:images] extraction failed for "${fileName}":`,
-      err instanceof Error ? err.message : err,
-    )
-    return []
-  }
+  // TODO(stub): Image extraction from PDF/Office files is now handled
+  // server-side during ingest (POST /api/v1/sources/ingest). The frontend
+  // no longer calls extract_and_save_pdf_images_cmd or
+  // extract_and_save_office_images_cmd directly.
+  // Returning [] preserves the caller contract without crashing.
+  void destDir
+  void relTo
+  console.warn(
+    `[ingest:images] extractAndSaveSourceImages is a no-op in browser/LAN mode. ` +
+    `Server-side ingest handles image extraction for "${fileName}".`,
+  )
+  return []
 }
 
 export async function extractAndSaveMarkdownImages(

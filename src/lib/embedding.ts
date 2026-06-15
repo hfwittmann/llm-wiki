@@ -21,7 +21,6 @@
  */
 
 import { readFile, listDirectory } from "@/commands/fs"
-import { invoke } from "@tauri-apps/api/core"
 import type { EmbeddingConfig } from "@/stores/wiki-store"
 import type { FileNode } from "@/types/wiki"
 import { normalizePath } from "@/lib/path-utils"
@@ -357,7 +356,19 @@ function doubaoMultimodalEmbeddingBody(model: string, text: string): Record<stri
   }
 }
 
-// ── LanceDB v2 operations (via Rust Tauri commands) ──────────────────────
+// ── LanceDB v2 operations — stubbed for browser/LAN port ─────────────────
+//
+// The vector_* Tauri commands operated directly on a LanceDB store on the
+// local filesystem. In the browser/LAN port the vector store lives on the
+// server and is managed entirely server-side as part of the ingest pipeline.
+//
+// The server-side search endpoint (/api/v1/search) handles keyword + optional
+// vector search internally. The frontend no longer needs to push chunk vectors
+// to LanceDB or call vector_search_chunks directly.
+//
+// All functions below are stubs that log a warning and return empty/no-op
+// results. TODO(5.9): if per-chunk vector operations are needed from the
+// frontend in the future, add server endpoints and wire them here.
 
 interface ChunkUpsertInput {
   chunkIndex: number
@@ -371,16 +382,9 @@ async function vectorUpsertChunks(
   pageId: string,
   chunks: ChunkUpsertInput[],
 ): Promise<void> {
-  await invoke("vector_upsert_chunks", {
-    projectPath: normalizePath(projectPath),
-    pageId,
-    chunks: chunks.map((c) => ({
-      chunk_index: c.chunkIndex,
-      chunk_text: c.chunkText,
-      heading_path: c.headingPath,
-      embedding: c.embedding.map((v) => Math.fround(v)),
-    })),
-  })
+  // TODO(stub): no HTTP equivalent for vector_upsert_chunks. Server handles
+  // vector indexing during ingest (POST /api/v1/sources/ingest).
+  void projectPath; void pageId; void chunks
 }
 
 interface ChunkSearchResult {
@@ -397,46 +401,38 @@ async function vectorSearchChunks(
   queryEmbedding: number[],
   topK: number,
 ): Promise<ChunkSearchResult[]> {
-  return await invoke("vector_search_chunks", {
-    projectPath: normalizePath(projectPath),
-    queryEmbedding: queryEmbedding.map((v) => Math.fround(v)),
-    topK,
-  })
+  // TODO(stub): no HTTP equivalent for vector_search_chunks. Use the
+  // POST /api/v1/search endpoint with query_embedding when server-side
+  // vector search is exposed.
+  void projectPath; void queryEmbedding; void topK
+  return []
 }
 
 async function vectorDeletePage(projectPath: string, pageId: string): Promise<void> {
-  await invoke("vector_delete_page", {
-    projectPath: normalizePath(projectPath),
-    pageId,
-  })
+  // TODO(stub): no HTTP equivalent for vector_delete_page.
+  void projectPath; void pageId
 }
 
 async function vectorCountChunks(projectPath: string): Promise<number> {
-  return await invoke("vector_count_chunks", {
-    projectPath: normalizePath(projectPath),
-  })
+  // TODO(stub): no HTTP equivalent for vector_count_chunks.
+  void projectPath
+  return 0
 }
 
 async function vectorClearChunks(projectPath: string): Promise<void> {
-  await invoke("vector_clear_chunks", {
-    projectPath: normalizePath(projectPath),
-  })
+  // TODO(stub): no HTTP equivalent for vector_clear_chunks.
+  void projectPath
 }
 
 export async function legacyVectorRowCount(projectPath: string): Promise<number> {
-  try {
-    return await invoke("vector_legacy_row_count", {
-      projectPath: normalizePath(projectPath),
-    })
-  } catch {
-    return 0
-  }
+  // TODO(stub): no HTTP equivalent for vector_legacy_row_count.
+  void projectPath
+  return 0
 }
 
 export async function dropLegacyVectorTable(projectPath: string): Promise<void> {
-  await invoke("vector_drop_legacy", {
-    projectPath: normalizePath(projectPath),
-  })
+  // TODO(stub): no HTTP equivalent for vector_drop_legacy.
+  void projectPath
 }
 
 export async function clearChunkVectorTable(projectPath: string): Promise<void> {

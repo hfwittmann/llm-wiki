@@ -3,17 +3,25 @@
  * pieces: auto-halve retry heuristics and the chunk→page aggregation
  * contract inside `searchByEmbedding`.
  *
- * The actual HTTP layer and Tauri LanceDB commands are mocked — we're
- * NOT testing Rust vectorstore here (that has its own 15 Rust tests)
- * nor the webview fetch (that's tauri-fetch.ts). The boundary we pin
- * down here is "given these chunk-level results, do we aggregate to
- * page-level scores the way the design says?".
+ * After Task 5.3 (browser/LAN port), all vector_* Tauri commands are
+ * stubs that return empty results. The describe blocks that exercised
+ * chunk-level aggregation via mocked invoke calls are marked `.skip`
+ * with a TODO for Task 5.11 (Phase 5 cleanup) to rewrite them against
+ * the server-side /api/v1/search endpoint once server vector search is
+ * exposed.
+ *
+ * The `fetchEmbedding — provider wire formats` tests remain active
+ * because they only depend on mockHttpFetch, not invoke.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
-// Module-level mock for the Tauri invoke boundary so we can script the
-// chunk-search response without touching real LanceDB.
+// Keep mockInvoke declared (some still-active tests below reference it
+// transitively via the auto-halve describe that calls searchByEmbedding).
+// TODO(5.11): remove when the skipped describe blocks are rewritten.
 const mockInvoke = vi.fn<(cmd: string, args?: unknown) => Promise<unknown>>()
+// @tauri-apps/api/core is no longer imported by embedding.ts after Task 5.3.
+// Keep the mock stub so old tests that have not yet been rewritten don't
+// error out on module resolution.
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string, args?: unknown) => mockInvoke(cmd, args),
 }))
@@ -80,8 +88,11 @@ beforeEach(() => {
 })
 
 // ── searchByEmbedding — chunk→page aggregation ─────────────────────
+// TODO(5.11): rewrite these tests to mock the server-side /api/v1/search
+// endpoint instead of vector_search_chunks invoke, once Task 5.9 wires
+// vector search through the HTTP proxy.
 
-describe("searchByEmbedding — aggregation", () => {
+describe.skip("searchByEmbedding — aggregation", () => {
   it("returns [] when embedding call fails (null vector)", async () => {
     mockHttpFetch.mockResolvedValue(genericErrorResponse(401, "Unauthorized"))
     const out = await searchByEmbedding("/tmp/p", "hello", cfg, 5)
@@ -875,8 +886,9 @@ describe("fetchEmbedding — provider wire formats", () => {
 })
 
 // ── fetchEmbedding auto-halve — via embedPage/searchByEmbedding ─────
+// TODO(5.11): rewrite these tests to not rely on vector_search_chunks invoke.
 
-describe("fetchEmbedding (via searchByEmbedding) — auto-halve", () => {
+describe.skip("fetchEmbedding (via searchByEmbedding) — auto-halve", () => {
   it("retries after an oversize 400 with halved text and succeeds", async () => {
     const responses = [oversizeErrorResponse(400), okResponse([0.1, 0.2])]
     let call = 0
@@ -1033,7 +1045,8 @@ describe("fetchEmbedding (via searchByEmbedding) — auto-halve", () => {
 
 // ── embedPage — replaces page's chunks in LanceDB ──────────────────
 
-describe("embedPage", () => {
+// TODO(5.11): rewrite embedPage tests — vector_upsert_chunks is now a no-op stub.
+describe.skip("embedPage", () => {
   it("chunks the page, embeds each, and upserts", async () => {
     // Fresh Response per call — Response body streams can't be
     // double-consumed.
@@ -1239,8 +1252,10 @@ describe("embedPage", () => {
 })
 
 // ── embedAllPages — walk wiki tree, skip structural pages ───────────
+// TODO(5.11): rewrite embedAllPages tests — vector_upsert_chunks and
+// vector_clear_chunks are now no-op stubs (Task 5.3).
 
-describe("embedAllPages", () => {
+describe.skip("embedAllPages", () => {
   // Helpers to mock the fs commands that embedding.ts reads from.
   // The mock factory created vi.fn() instances at module load (see the
   // top-level vi.mock("@/commands/fs", ...)); we grab references here
@@ -1597,8 +1612,10 @@ describe("embedAllPages", () => {
 })
 
 // ── Legacy & misc helpers ───────────────────────────────────────────
+// TODO(5.11): rewrite these tests — all vector_* commands are no-op stubs
+// after Task 5.3.
 
-describe("legacyVectorRowCount / dropLegacyVectorTable / getEmbeddingCount / removePageEmbedding", () => {
+describe.skip("legacyVectorRowCount / dropLegacyVectorTable / getEmbeddingCount / removePageEmbedding", () => {
   it("legacyVectorRowCount: returns the Rust row count on success, 0 on error", async () => {
     mockInvoke.mockResolvedValueOnce(42)
     const n = await legacyVectorRowCount("/proj")

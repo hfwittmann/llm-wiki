@@ -1,22 +1,25 @@
 /**
- * The RRF scoring implementation now lives in Rust
- * (`commands::search`). These TS tests only guard the WebView wrapper:
- * it should pass embedding config to the shared backend command and map
- * backend-relative result paths back to absolute project paths for the editor.
+ * Tests for the searchWiki HTTP wrapper.
+ * After Task 5.3, `searchWiki` uses POST /api/v1/search (apiCall) instead
+ * of the `search_project` Tauri invoke command. Tests updated accordingly.
+ * (The file is named search-rrf.test.ts for historical reasons; RRF ranking
+ * now lives server-side but the wrapper contract is still worth guarding.)
  */
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { useWikiStore } from "@/stores/wiki-store"
 
-const mockInvoke = vi.fn()
+const mockApiCall = vi.fn()
 
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (...args: unknown[]) => mockInvoke(...args),
+vi.mock("@/lib/api", () => ({
+  apiCall: (...args: unknown[]) => mockApiCall(...args),
+  fileRawUrl: (projectPath: string, filePath: string) =>
+    `/api/v1/files/raw?project_path=${encodeURIComponent(projectPath)}&path=${encodeURIComponent(filePath)}`,
 }))
 
 import { searchWiki, tokenizeQuery } from "./search"
 
 beforeEach(() => {
-  mockInvoke.mockReset()
+  mockApiCall.mockReset()
   useWikiStore.getState().setEmbeddingConfig({
     enabled: true,
     endpoint: "http://test/v1/embeddings",
@@ -25,9 +28,9 @@ beforeEach(() => {
   })
 })
 
-describe("searchWiki backend wrapper", () => {
-  it("passes embeddingConfig to the shared backend search command and absolutizes paths", async () => {
-    mockInvoke.mockResolvedValueOnce({
+describe("searchWiki HTTP wrapper", () => {
+  it("calls POST /api/v1/search and absolutizes paths", async () => {
+    mockApiCall.mockResolvedValueOnce({
       mode: "hybrid",
       tokenHits: 1,
       vectorHits: 1,
@@ -45,40 +48,25 @@ describe("searchWiki backend wrapper", () => {
 
     const out = await searchWiki("/tmp/project", "attention")
 
-    expect(mockInvoke).toHaveBeenCalledWith("search_project", {
-      projectPath: "/tmp/project",
+    expect(mockApiCall).toHaveBeenCalledWith("POST", "/api/v1/search", {
+      project_path: "/tmp/project",
       query: "attention",
-      topK: 20,
-      includeContent: false,
-      queryEmbedding: null,
-      embeddingConfig: expect.objectContaining({ enabled: true, model: "test-embed" }),
+      top_k: 20,
+      include_content: false,
     })
     expect(out[0].path).toBe("/tmp/project/wiki/concepts/attention.md")
   })
 
-  it("passes disabled embedding config through for backend keyword-only search", async () => {
-    useWikiStore.getState().setEmbeddingConfig({
-      enabled: false,
-      endpoint: "",
-      apiKey: "",
-      model: "",
-    })
-    mockInvoke.mockResolvedValueOnce({
+  it("returns [] for an empty results list", async () => {
+    mockApiCall.mockResolvedValueOnce({
       mode: "keyword",
-      tokenHits: 1,
+      tokenHits: 0,
       vectorHits: 0,
       results: [],
     })
 
-    await searchWiki("/tmp/project", "attention")
-
-    expect(mockInvoke).toHaveBeenCalledWith(
-      "search_project",
-      expect.objectContaining({
-        queryEmbedding: null,
-        embeddingConfig: expect.objectContaining({ enabled: false }),
-      }),
-    )
+    const out = await searchWiki("/tmp/project", "attention")
+    expect(out).toEqual([])
   })
 
   it("keeps CJK tokenization behavior for image caption filtering", () => {

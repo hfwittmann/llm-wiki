@@ -1,18 +1,21 @@
 /**
  * Tests for `resolveMarkdownImageSrc`.
  *
- * Tauri's `convertFileSrc` is mocked to a deterministic identity
- * wrapper so we can assert the path that goes IN, not the actual
- * Tauri-side URL shape (which differs across platforms — `asset://`
- * on macOS, `https://asset.localhost/` on Windows, etc.).
+ * `fileRawUrl` is mocked to a deterministic identity wrapper so we can
+ * assert the path that goes IN without caring about the actual query-string
+ * encoding of the server URL.
+ *
+ * Previously, Tauri's `convertFileSrc` was mocked the same way. The behaviour
+ * contract is unchanged — only the underlying URL builder is different.
  */
 import { describe, it, expect, vi } from "vitest"
 
-// Hoisted mock — all calls to convertFileSrc return `tauri-asset:<path>`
-// so tests can assert the input path was assembled correctly without
-// caring about Tauri's per-platform URL scheme.
-vi.mock("@tauri-apps/api/core", () => ({
-  convertFileSrc: (path: string) => `tauri-asset:${path}`,
+// Hoisted mock — all calls to fileRawUrl return `server-asset:<projectPath>/<relPath>`
+// so tests can assert the input path was assembled correctly without caring about
+// the actual query-string encoding.
+vi.mock("@/lib/api", () => ({
+  fileRawUrl: (projectPath: string, filePath: string) =>
+    `tauri-asset:${projectPath}/${filePath}`,
 }))
 
 import { resolveMarkdownImageSrc } from "./markdown-image-resolver"
@@ -257,8 +260,8 @@ describe("resolveMarkdownImageSrc", () => {
     it("decodes percent-encoded CJK paths so the disk path is literal UTF-8", () => {
       // Regression: ReactMarkdown/remark percent-encodes non-ASCII
       // image URLs. The src arrives already-encoded; if we don't
-      // decode it, convertFileSrc double-encodes (%E6 → %25E6) and
-      // the asset server 404s. Decode must restore the real filename.
+      // decode it, the URL builder double-encodes (%E6 → %25E6) and
+      // the server 404s. Decode must restore the real filename.
       const encoded =
         "media/%E6%98%93%E9%85%8D%E7%BD%AE%E5%B9%B3%E5%8F%B02.0%E5%9F%B9%E8%AE%AD-1/001-GTuhw460rheJYBb4dnccLxYDngd.jpg"
       expect(

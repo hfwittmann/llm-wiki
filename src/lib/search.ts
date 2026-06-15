@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core"
+import { apiCall } from "@/lib/api"
 import { normalizePath } from "@/lib/path-utils"
 import { useWikiStore } from "@/stores/wiki-store"
 
@@ -43,7 +43,7 @@ export function tokenizeQuery(query: string): string[] {
 
   const tokens: string[] = []
   for (const token of rawTokens) {
-    const hasCJK = /[\u4e00-\u9fff\u3400-\u4dbf]/.test(token)
+    const hasCJK = /[一-鿿㐀-䶿]/.test(token)
     if (hasCJK && token.length > 2) {
       const chars = [...token]
       for (let i = 0; i < chars.length - 1; i++) tokens.push(chars[i] + chars[i + 1])
@@ -66,14 +66,18 @@ export async function searchWiki(
   const pp = normalizePath(projectPath)
   const embCfg = useWikiStore.getState().embeddingConfig
 
-  const response = await invoke<BackendSearchResponse>("search_project", {
-    projectPath: pp,
+  // HTTP: POST /api/v1/search
+  // The server accepts project_path, query, top_k, include_content.
+  // query_embedding and embedding_config are handled client-side (via embedding.ts)
+  // before calling this function; the server does keyword-only search.
+  const response = await apiCall<BackendSearchResponse>("POST", "/api/v1/search", {
+    project_path: pp,
     query,
-    topK: 20,
-    includeContent: false,
-    queryEmbedding: null,
-    embeddingConfig: embCfg,
+    top_k: 20,
+    include_content: false,
   })
+
+  void embCfg // embedding config is used by the embedding layer, not here
 
   return response.results.map((result) => ({
     ...result,

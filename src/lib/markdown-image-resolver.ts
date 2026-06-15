@@ -1,40 +1,29 @@
 /**
  * Resolve markdown image `src` attributes so they actually load in
- * the Tauri webview.
+ * the browser/LAN context.
  *
- * The problem: ingest writes images to `<project>/wiki/media/<slug>/`
- * and embeds them in generated wiki pages as
- * `![](media/<slug>/img-1.png)`. A markdown renderer interprets that
- * relative to the rendering page's URL — but in Tauri there IS no
- * URL context for arbitrary file paths, AND the wiki page may be
- * located deeper than `wiki/concepts/foo.md` so naive `../media/...`
- * fixups don't generalize.
+ * Previously used Tauri's `convertFileSrc` to produce `asset://` URLs.
+ * In the browser/LAN port, images are served via the server's
+ * `/api/v1/files/raw?project_path=...&path=...` endpoint.
  *
- * Convention we settle on:
+ * The resolver now requires a `projectPath` to build URLs. Absolute
+ * `src` values that point inside the project are converted to
+ * `fileRawUrl(projectPath, relativePath)`. Relative `src` values are
+ * resolved against the wiki root or the current file's directory, then
+ * converted the same way.
+ *
+ * Behaviour contract (unchanged from Tauri version):
  *
  *   - Any src starting with `http://`, `https://`, `data:`, `blob:`,
  *     `file:`, `tauri://` is passed through unchanged.
- *   - Any src starting with `/` (absolute) is wrapped with
- *     `convertFileSrc` directly — the path is the filesystem
- *     absolute path.
- *   - **A relative src is resolved against the rendering markdown
- *     file's own directory** when that directory is known
- *     (`currentFileDir`). This is how Obsidian — and every other
- *     markdown tool — resolves images, and it's what lets
- *     skill-exported sources work: a `raw/sources/foo.md` that
- *     references `../assets/img.png` correctly lands on
- *     `raw/assets/img.png`.
- *   - When the file's directory is NOT known, a relative src is
- *     treated as relative to the project's `wiki/` root. Generated
- *     wiki content uses this form (`media/foo/img-1.png`) and the
- *     fallback keeps it working for callers that can't supply a
- *     file context (e.g. chat replies).
- *
- * The resolver returns a string that React's <img src=...> can load:
- * the appropriate `convertFileSrc(...)` URL or the original src
- * verbatim.
+ *   - Any src starting with `/` (absolute) is allowed only when it
+ *     stays inside the current project; it is then converted to a
+ *     server URL via `fileRawUrl`.
+ *   - A relative src is resolved against `currentFileDir` when
+ *     provided, otherwise against `<project>/wiki/`.
+ *   - When `projectPath` is null, srcs are passed through unchanged.
  */
-import { convertFileSrc } from "@tauri-apps/api/core"
+import { fileRawUrl } from "@/lib/api"
 import { normalizePath } from "@/lib/path-utils"
 
 const PASSTHROUGH_RE = /^(https?:|data:|blob:|file:|tauri:)/i
@@ -84,6 +73,19 @@ function collapsePath(p: string): string {
 }
 
 /**
+ * Convert a resolved absolute filesystem path to a server URL.
+ * The path must be inside the project; it is passed as a project-relative path
+ * to the files/raw endpoint.
+ */
+function toServerUrl(absolutePath: string, projectPath: string): string {
+  const pp = normalizePath(projectPath)
+  const abs = normalizePath(absolutePath)
+  const prefix = trimTrailingSlash(pp) + "/"
+  const relativePath = abs.startsWith(prefix) ? abs.slice(prefix.length) : abs
+  return fileRawUrl(pp, relativePath)
+}
+
+/**
  * `projectPath` is the wiki project's root directory. When null
  * (no project loaded), the resolver passes srcs through unchanged
  * so it remains safe to call before a project is open.
@@ -112,11 +114,11 @@ export function resolveMarkdownImageSrc(
   // is used for both generated/imported markdown and normal wiki reading, so
   // this intentionally trades off rendering arbitrary external local images
   // for a single safe rule: markdown cannot turn into a project-external local
-  // file read through Tauri's asset server. External web URLs still pass
+  // file read through the server's file endpoint. External web URLs still pass
   // through via PASSTHROUGH_RE above.
   if (isAbsolute) {
     const absolute = collapsePath(normalizePath(decodePathSrc(rawSrc)))
-    return isInsideProject(absolute, pp) ? convertFileSrc(absolute) : rawSrc
+    return isInsideProject(absolute, pp) ? toServerUrl(absolute, pp) : rawSrc
   }
 
   // Strip a leading `./` for cleanliness; treat `media/foo.png` and
@@ -130,9 +132,9 @@ export function resolveMarkdownImageSrc(
   // arrives here as
   //   media/%E6%98%93%E9%85%8D.../001-x.jpg
   // We must turn that back into the literal UTF-8 path that exists on
-  // disk — otherwise convertFileSrc() encodes the `%` again (→ %25E6),
-  // the asset server looks for a file whose name literally contains
-  // "%E6", finds nothing, and the image 404s (showing the alt text).
+  // disk — otherwise the server-URL builder encodes the `%` again (→ %25E6),
+  // the server looks for a file whose name literally contains "%E6",
+  // finds nothing, and the image 404s.
   // Decoding is wrapped because a malformed `%` sequence throws; in
   // that case we keep the raw value rather than crash the renderer.
   const cleaned = decodePathSrc(stripped)
@@ -163,7 +165,7 @@ export function resolveMarkdownImageSrc(
       dir.startsWith("/") || /^[a-zA-Z]:/.test(dir) || dir.startsWith("\\\\")
     const baseDir = dirIsAbsolute ? dir : `${pp}/${dir}`
     const absolute = collapsePath(`${baseDir.replace(/\/+$/, "")}/${cleaned}`)
-    return isInsideProject(absolute, pp) ? convertFileSrc(absolute) : rawSrc
+    return isInsideProject(absolute, pp) ? toServerUrl(absolute, pp) : rawSrc
   }
 
   // Fallback: resolve as wiki-root-relative. Image references in
@@ -171,5 +173,5 @@ export function resolveMarkdownImageSrc(
   // so the path is stable regardless of page depth, and callers
   // without a file context (chat replies) rely on it too.
   const absolute = collapsePath(`${pp}/wiki/${wikiRootMediaPath}`)
-  return isInsideProject(absolute, pp) ? convertFileSrc(absolute) : rawSrc
+  return isInsideProject(absolute, pp) ? toServerUrl(absolute, pp) : rawSrc
 }
