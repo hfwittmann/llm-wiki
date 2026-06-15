@@ -16,15 +16,15 @@
  *      `{id, score}[]` shape; matched chunks available on the
  *      optional `matchedChunks` field for future UI surfacing.
  *
- * HTTP goes through the Tauri plugin (`src/lib/tauri-fetch.ts`) so
- * CORS-unfriendly endpoints work the same as the LLM path.
+ * HTTP uses browser `fetch` directly; CORS for user-configured endpoints
+ * is handled server-side via the LAN proxy.
  */
 
 import { readFile, listDirectory } from "@/commands/fs"
 import type { EmbeddingConfig } from "@/stores/wiki-store"
 import type { FileNode } from "@/types/wiki"
 import { normalizePath } from "@/lib/path-utils"
-import { getHttpFetch, isFetchNetworkError } from "@/lib/tauri-fetch"
+import { isFetchNetworkError } from "@/lib/llm-client"
 import { chunkMarkdown, type Chunk } from "@/lib/text-chunker"
 import { isLocalOrPrivateHttpEndpoint, localLlmOriginHeader } from "@/lib/llm-providers"
 
@@ -135,8 +135,7 @@ export async function fetchEmbedding(
   while (attempts <= maxRetries) {
     attempts++
     try {
-      const httpFetch = await getHttpFetch()
-      const resp = await httpFetch(endpoint, {
+      const resp = await fetch(endpoint, {
         method: "POST",
         headers,
         body: JSON.stringify(

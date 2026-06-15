@@ -1,13 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 
-// Stub getHttpFetch so streamChat hits our in-test responder; keep the
-// rest of tauri-fetch (notably isFetchNetworkError) real so the existing
-// cross-webview tests below still exercise the genuine classifier.
+// Stub globalThis.fetch so streamChat hits our in-test responder.
+// isFetchNetworkError is now defined directly in llm-client.ts (no tauri-fetch dep).
 const mockHttpFetch = vi.fn<(url: string, opts?: RequestInit) => Promise<Response>>()
-vi.mock("./tauri-fetch", async () => {
-  const actual = await vi.importActual<typeof import("./tauri-fetch")>("./tauri-fetch")
-  return { ...actual, getHttpFetch: () => Promise.resolve(mockHttpFetch) }
-})
 
 import { isFetchNetworkError, streamChat } from "./llm-client"
 import type { LlmConfig } from "@/stores/wiki-store"
@@ -113,9 +108,11 @@ function pendingStreamResponse(): {
 describe("streamChat — mid-stream abort mapping", () => {
   beforeEach(() => {
     mockHttpFetch.mockReset()
+    vi.stubGlobal("fetch", mockHttpFetch)
     vi.useFakeTimers()
   })
   afterEach(() => {
+    vi.unstubAllGlobals()
     vi.useRealTimers()
   })
 
@@ -194,6 +191,7 @@ describe("streamChat — mid-stream abort mapping", () => {
   it("treats pre-fetch bare-string cancel spellings as silent cancels", async () => {
     for (const message of ["request cancelled", "Request canceled"]) {
       mockHttpFetch.mockReset()
+      vi.stubGlobal("fetch", mockHttpFetch)
       mockHttpFetch.mockRejectedValueOnce(message)
 
       const onError = vi.fn()

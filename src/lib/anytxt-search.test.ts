@@ -12,6 +12,10 @@ const streamChatMock = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/llm-client", () => ({
   streamChat: streamChatMock,
+  isFetchNetworkError: (err: unknown) =>
+    err instanceof TypeError ||
+    (err instanceof Error &&
+      (err.message === "Load failed" || err.message === "Failed to fetch")),
 }))
 
 const fetchMock = vi.fn<typeof fetch>()

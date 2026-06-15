@@ -14,7 +14,7 @@
  * covers 95% of the value.
  */
 
-import { getHttpFetch, isFetchNetworkError } from "./tauri-fetch"
+import { isFetchNetworkError } from "./llm-client"
 
 /** The subset of the GitHub release API response we care about. */
 /**
@@ -103,8 +103,7 @@ export async function fetchLatestRelease(
 ): Promise<GithubRelease | null> {
   const url = `https://api.github.com/repos/${repo}/releases/latest`
   try {
-    const httpFetch = await getHttpFetch()
-    const resp = await httpFetch(url, {
+    const resp = await fetch(url, {
       method: "GET",
       headers: {
         Accept: "application/vnd.github+json",

@@ -1,11 +1,27 @@
 import type { LlmConfig } from "@/stores/wiki-store"
 import { isAzureOpenAiEndpoint } from "@/lib/azure-openai"
 import { getProviderConfig, type RequestOverrides } from "./llm-providers"
-import { getHttpFetch, isFetchNetworkError } from "./tauri-fetch"
 import { countReasoningCharsInLine, extractReasoningTextFromLine } from "./reasoning-detector"
 
 export type { ChatMessage, ContentBlock, RequestOverrides } from "./llm-providers"
-export { isFetchNetworkError } from "./tauri-fetch"
+
+/**
+ * Detect fetch-level network failures across browsers and webview backends.
+ * Chromium / Edge WebView2 throws TypeError; WebKit surfaces "Load failed".
+ * AbortError (user cancel) is intentionally excluded.
+ */
+export function isFetchNetworkError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  if (err.name === "AbortError") return false
+  // Chromium / Edge WebView2
+  if (err.name === "TypeError") return true
+  // WebKit (macOS / Linux GTK)
+  if (err.message === "Load failed") return true
+  // Chromium mid-stream drop
+  if (err.message === "Failed to fetch") return true
+  if (err.message.includes("network error")) return true
+  return false
+}
 
 export interface StreamCallbacks {
   onToken: (token: string) => void
@@ -77,8 +93,7 @@ export async function streamChat(
   let response: Response
   try {
     const body = providerConfig.buildBody(messages, requestOverrides)
-    const httpFetch = await getHttpFetch()
-    response = await httpFetch(providerConfig.url, {
+    response = await fetch(providerConfig.url, {
       method: "POST",
       headers: providerConfig.headers,
       body: JSON.stringify(body),

@@ -1,11 +1,7 @@
 import JSZip from "jszip"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const mockHttpFetch = vi.fn<(url: string, opts?: RequestInit) => Promise<Response>>()
-
-vi.mock("@/lib/tauri-fetch", () => ({
-  getHttpFetch: () => Promise.resolve(mockHttpFetch),
-}))
 
 const fsMocks = vi.hoisted(() => ({
   createDirectory: vi.fn<() => Promise<void>>(),
@@ -44,8 +40,13 @@ async function zipResponse(files: Record<string, string>): Promise<Response> {
   return new Response(buffer)
 }
 
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
 beforeEach(() => {
   mockHttpFetch.mockReset()
+  vi.stubGlobal("fetch", mockHttpFetch)
   fsMocks.createDirectory.mockReset()
   fsMocks.getFileSize.mockReset()
   fsMocks.readFileAsBase64.mockReset()

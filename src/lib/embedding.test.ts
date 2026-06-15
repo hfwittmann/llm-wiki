@@ -13,7 +13,7 @@
  * The `fetchEmbedding — provider wire formats` tests remain active
  * because they only depend on mockHttpFetch, not invoke.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 
 // Keep mockInvoke declared (some still-active tests below reference it
 // transitively via the auto-halve describe that calls searchByEmbedding).
@@ -26,10 +26,10 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string, args?: unknown) => mockInvoke(cmd, args),
 }))
 
-// Stub getHttpFetch so fetchEmbedding calls hit our in-test responder.
+// Stub globalThis.fetch so fetchEmbedding calls hit our in-test responder.
 const mockHttpFetch = vi.fn<(url: string, opts?: RequestInit) => Promise<Response>>()
-vi.mock("@/lib/tauri-fetch", () => ({
-  getHttpFetch: () => Promise.resolve(mockHttpFetch),
+// isFetchNetworkError is now defined directly in llm-client.ts; mock it there.
+vi.mock("@/lib/llm-client", () => ({
   isFetchNetworkError: (err: unknown) =>
     err instanceof TypeError ||
     (err instanceof Error &&
@@ -82,9 +82,14 @@ function genericErrorResponse(status: number, body: string): Response {
   return new Response(body, { status, statusText: "Error" })
 }
 
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
 beforeEach(() => {
   mockInvoke.mockReset()
   mockHttpFetch.mockReset()
+  vi.stubGlobal("fetch", mockHttpFetch)
 })
 
 // ── searchByEmbedding — chunk→page aggregation ─────────────────────

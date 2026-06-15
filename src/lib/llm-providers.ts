@@ -71,48 +71,22 @@ const JSON_CONTENT_TYPE = "application/json"
  * server, LocalAI, vLLM, …).
  *
  * Always sets `Origin: http://localhost` regardless of where the
- * actual server is. Two interlocking reasons:
- *
- *   1. We MUST override the platform default. `@tauri-apps/plugin-
- *      http` v2.5.x auto-injects the webview's own origin
- *      (`tauri://localhost` on macOS/Linux,
- *      `http://tauri.localhost` on Windows). Ollama's default
- *      `OLLAMA_ORIGINS` allowlist accepts `tauri://*` since ~0.1.30
- *      but NOT `http://tauri.localhost` — without our override,
- *      Windows users hit 403. (User packet capture v0.3.11.)
- *
- *   2. We can't override with the request's REAL origin because
- *      that breaks cross-machine LAN setups. A user pointing at
- *      `http://192.168.0.20:11434/v1` would get `Origin:
- *      http://192.168.0.20:11434`, which is NOT in Ollama's
- *      default OLLAMA_ORIGINS — Ollama then 403s or RST-closes
- *      the connection, surfacing as a generic "error sending
- *      request" reqwest error. The earlier code claimed Ollama
- *      did same-origin bypass; it does not. Reported by user
- *      v0.4.2.
+ * actual server is.
  *
  * `http://localhost` is unconditionally in Ollama's default
  * OLLAMA_ORIGINS list (`http://localhost`, `http://localhost:*`,
  * `http://127.0.0.1*`, etc.). LM Studio / llama.cpp / vLLM /
  * LocalAI don't check Origin at all, so the value is ignored
  * there. The header is purely a CORS-allowlist signal — semantic
- * "where this request came from" is meaningless here because the
- * server uses API keys (or no auth), not origin, for actual
- * permission checks.
+ * "where this request came from" is meaningless because servers
+ * use API keys (or no auth), not origin, for actual permission
+ * checks.
  *
  * Users who actively tightened OLLAMA_ORIGINS to remove localhost
  * (rare) need to re-add `http://localhost` to their server config;
  * no client-side fix can satisfy a hand-locked allowlist that
  * specifically excludes the one origin every other LLM client
  * also relies on.
- *
- * Why this overrides at all: plugin-http's JS shim respects user-
- * set headers (see `node_modules/@tauri-apps/plugin-http/dist-js/
- * index.js` — the loop after `new Request(input, init)` only fills
- * browser-default headers when the user did NOT already set them).
- * Rust-side, the `unsafe-headers` feature flag in
- * `src-tauri/Cargo.toml` lets reqwest forward Origin without
- * stripping it. End-to-end our value wins.
  */
 export function localLlmOriginHeader(): Record<string, string> {
   return { Origin: "http://localhost" }

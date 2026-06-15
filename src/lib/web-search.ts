@@ -5,7 +5,7 @@ import type {
   SearXngCategory,
   SerpApiEngine,
 } from "@/stores/wiki-store"
-import { getHttpFetch, isFetchNetworkError } from "@/lib/tauri-fetch"
+import { isFetchNetworkError } from "@/lib/llm-client"
 import { hasConfiguredAnyTxt, normalizeAnyTxtConfig } from "@/lib/anytxt-search"
 
 export interface WebSearchResult {
@@ -191,10 +191,9 @@ async function searXngSearch(
   endpoint.searchParams.set("format", "json")
   endpoint.searchParams.set("categories", (categories.length > 0 ? categories : ["general"]).join(","))
 
-  const httpFetch = await getHttpFetch()
   let response: Response
   try {
-    response = await httpFetch(endpoint.toString(), {
+    response = await fetch(endpoint.toString(), {
       method: "GET",
       headers: { Accept: "application/json" },
     })
@@ -253,13 +252,9 @@ async function tavilySearch(
   apiKey: string,
   maxResults: number,
 ): Promise<WebSearchResult[]> {
-  // Route through the Tauri HTTP plugin so future non-Tavily search
-  // providers (Serper, Exa, Brave, Google CSE, ...) with less friendly
-  // CORS don't each need their own workaround. See tauri-fetch.ts.
-  const httpFetch = await getHttpFetch()
   let response: Response
   try {
-    response = await httpFetch("https://api.tavily.com/search", {
+    response = await fetch("https://api.tavily.com/search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -307,10 +302,9 @@ async function serpApiSearch(
     num: String(maxResults),
   })
 
-  const httpFetch = await getHttpFetch()
   let response: Response
   try {
-    response = await httpFetch(`https://serpapi.com/search?${params.toString()}`, {
+    response = await fetch(`https://serpapi.com/search?${params.toString()}`, {
       method: "GET",
       headers: { Accept: "application/json" },
     })
@@ -405,10 +399,9 @@ async function ollamaSearch(
     Authorization: `Bearer ${trimmedApiKey}`,
   }
 
-  const httpFetch = await getHttpFetch()
   let response: Response
   try {
-    response = await httpFetch("https://ollama.com/api/web_search", {
+    response = await fetch("https://ollama.com/api/web_search", {
       method: "POST",
       headers,
       body: JSON.stringify({

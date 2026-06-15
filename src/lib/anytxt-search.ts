@@ -1,5 +1,5 @@
 import type { AnyTxtConfig, LlmConfig } from "@/stores/wiki-store"
-import { getHttpFetch, isFetchNetworkError } from "@/lib/tauri-fetch"
+import { isFetchNetworkError } from "@/lib/llm-client"
 import { normalizePath } from "@/lib/path-utils"
 import { streamChat } from "@/lib/llm-client"
 import type { WebSearchResult } from "./web-search"
@@ -203,10 +203,9 @@ async function getAnyTxtFragment(endpoint: string, fid: string, pattern: string)
 }
 
 async function callAnyTxtRpc(endpoint: string, method: string, input: Record<string, unknown>): Promise<unknown> {
-  const httpFetch = await getHttpFetch()
   let response: Response
   try {
-    response = await httpFetch(endpoint, {
+    response = await fetch(endpoint, {
       method: "POST",
       headers: {
         Accept: "application/json",
